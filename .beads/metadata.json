@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "perler",
+  "project_id": "c3b8a566-b239-4ce9-8d61-844e28d39ea9"
+}
