@@ -161,6 +161,7 @@
       <button id="toolPaint" class="active">🖌 Paint</button>
       <button id="toolErase">⌫ Erase</button>
       <button id="btnUndo" title="Cmd/Ctrl+Z">↩ Undo</button>
+      <button id="btnRedo" title="Cmd/Ctrl+Shift+Z">↪ Redo</button>
     </div>
     <div class="row" style="margin-top:6px">
       <button id="btnClear">Clear board</button>
@@ -333,7 +334,6 @@ let pegEls = new Map();         // key -> {outer, hole, dot}
 let curColor = 'yellow';
 let tool = 'paint';
 let sym = { fold: 1, mirror: false };
-let undoStack = [];
 
 function defaultBoard() {
   return { type: 'polar', name: 'circle-14', rings: ringsFor(14) };
@@ -467,12 +467,12 @@ function applyAt(key, erase) {
   scheduleSync();
 }
 
-let dragging = false, strokeErase = false;
+let dragging = false, strokeErase = false, strokePrev = null;
 svg.addEventListener('pointerdown', e => {
   const t = e.target.closest('[data-key]');
   if (!t) return;
   e.preventDefault();
-  snapshot();
+  strokePrev = stateNow();
   dragging = true;
   strokeErase = tool === 'erase' || e.button === 2;
   applyAt(t.dataset.key, strokeErase);
@@ -487,23 +487,56 @@ svg.addEventListener('pointermove', e => {
   const t = el && el.closest('[data-key]');
   if (t) applyAt(t.dataset.key, strokeErase);
 });
-window.addEventListener('pointerup', () => dragging = false);
-window.addEventListener('pointercancel', () => dragging = false);
+// Commit the stroke to the undo stack only if it actually changed something,
+// so painting a bead with its existing color stays a no-op for undo.
+function endStroke() {
+  if (!dragging) return;
+  dragging = false;
+  if (strokePrev) { commitUndo(strokePrev); strokePrev = null; }
+}
+window.addEventListener('pointerup', endStroke);
+window.addEventListener('pointercancel', endStroke);
 svg.addEventListener('contextmenu', e => e.preventDefault());
 
-/* ---------------- Undo ---------------- */
-function snapshot() {
-  undoStack.push(new Map(beads));
+/* ---------------- Undo / redo ---------------- */
+const undoStack = [], redoStack = [];
+
+function stateNow() { return { board, beads: new Map(beads) }; }
+function statesEqual(a, b) {
+  if (JSON.stringify(a.board) !== JSON.stringify(b.board)) return false;
+  if (a.beads.size !== b.beads.size) return false;
+  for (const [k, v] of a.beads) if (b.beads.get(k) !== v) return false;
+  return true;
+}
+function commitUndo(prev) {
+  if (statesEqual(prev, stateNow())) return;
+  undoStack.push(prev);
   if (undoStack.length > 60) undoStack.shift();
+  redoStack.length = 0;
+}
+function restoreState(state) {
+  board = state.board;
+  beads = new Map(state.beads);
+  syncBoardControls();
+  buildSymOptions();
+  buildBoard();
+  scheduleSync();
 }
 function undo() {
   if (!undoStack.length) return;
-  beads = undoStack.pop();
-  renderFills();
-  scheduleSync();
+  redoStack.push(stateNow());
+  restoreState(undoStack.pop());
+}
+function redo() {
+  if (!redoStack.length) return;
+  undoStack.push(stateNow());
+  restoreState(redoStack.pop());
 }
 window.addEventListener('keydown', e => {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
+  if (!(e.metaKey || e.ctrlKey)) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+  else if (k === 'y') { e.preventDefault(); redo(); }
 });
 
 /* ---------------- JSON in/out ---------------- */
@@ -541,6 +574,7 @@ function loadFromJSON(text, quiet = false) {
   let j;
   try { j = JSON.parse(text); } catch (err) { toast('Invalid JSON: ' + err.message); return; }
   if (!j || !j.board || !Array.isArray(j.beads)) { toast('Expected { board, beads } object'); return; }
+  const prev = stateNow();
   const nb = j.board;
   if (nb.type === 'polar') {
     if (!Array.isArray(nb.rings) || !nb.rings.every(n => Number.isInteger(n) && n > 0)) {
@@ -554,7 +588,6 @@ function loadFromJSON(text, quiet = false) {
     board = { type: 'square', name: nb.name || 'square', width: nb.width, height: nb.height };
   } else { toast('board.type must be "polar" or "square"'); return; }
 
-  snapshot();
   beads = new Map();
   const s = j.symmetry && Number.isInteger(j.symmetry.fold)
     ? { fold: j.symmetry.fold, mirror: !!j.symmetry.mirror }
@@ -579,6 +612,7 @@ function loadFromJSON(text, quiet = false) {
   buildSymOptions();
   buildBoard();
   scheduleSync();
+  commitUndo(prev);
   if (!quiet) toast('Pattern loaded' + (skipped ? ` (${skipped} invalid beads skipped)` : ''));
 }
 
@@ -808,13 +842,15 @@ function setToolButtons() {
 document.getElementById('toolPaint').addEventListener('click', () => { tool = 'paint'; setToolButtons(); });
 document.getElementById('toolErase').addEventListener('click', () => { tool = 'erase'; setToolButtons(); });
 document.getElementById('btnUndo').addEventListener('click', undo);
+document.getElementById('btnRedo').addEventListener('click', redo);
 
 document.getElementById('btnClear').addEventListener('click', () => {
   if (beads.size && !confirm('Clear all beads?')) return;
-  snapshot();
+  const prev = stateNow();
   beads = new Map();
   renderFills();
   scheduleSync();
+  commitUndo(prev);
 });
 (function () {
   const sel = document.getElementById('exampleSel');
@@ -834,7 +870,7 @@ document.getElementById('btnClear').addEventListener('click', () => {
 })();
 
 document.getElementById('btnDemo').addEventListener('click', () => {
-  snapshot();
+  const prev = stateNow();
   board = defaultBoard();
   syncBoardControls();
   buildSymOptions();
@@ -842,6 +878,7 @@ document.getElementById('btnDemo').addEventListener('click', () => {
   beads = demoPattern();
   renderFills();
   scheduleSync();
+  commitUndo(prev);
 });
 
 function buildSymOptions() {
@@ -876,6 +913,7 @@ function syncBoardControls() {
 
 document.getElementById('btnRebuild').addEventListener('click', () => {
   if (beads.size && !confirm('Rebuilding the board clears the current pattern. Continue?')) return;
+  const prev = stateNow();
   if (typeSel.value === 'polar') {
     const listRaw = document.getElementById('ringList').value.trim();
     let rings;
@@ -892,11 +930,11 @@ document.getElementById('btnRebuild').addEventListener('click', () => {
     const H = Math.max(2, Math.min(60, +document.getElementById('sqH').value || 29));
     board = { type: 'square', name: `square-${W}x${H}`, width: W, height: H };
   }
-  snapshot();
   beads = new Map();
   buildSymOptions();
   buildBoard();
   scheduleSync();
+  commitUndo(prev);
 });
 
 /* ---------------- Theme ---------------- */
