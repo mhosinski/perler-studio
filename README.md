@@ -74,7 +74,13 @@ symmetry spokes). Isolated beads and floating mid-wedge islands literally fall o
 after ironing. Connected designs lean on solid anchor rings, eyelet bands cut into
 solid bands, arcs anchored to spoke columns, and rim scallops whose endpoints meet
 their shoulder arcs; the generated LLM prompt instructs models to follow the same
-rule. `tools/inspect.js` checks this automatically.
+rule.
+
+The app checks this live: a badge above the bead counts shows **✓ Holds together**
+or **⚠ N loose islands** — tap the warning to highlight the offending beads on the
+board. When the piece holds but some contacts depend on adjacent-ring stagger (which
+fuses because ironing spreads beads), a hint suggests ironing those sections evenly.
+`tools/inspect.js` runs the same check from the command line.
 
 The same symmetry tools work for hand-painting: set Fold/Mirror in the sidebar and
 every peg you paint places all its symmetric copies.
