@@ -58,7 +58,19 @@ one wedge:
 
 That one bead becomes 12 (6 rotations × mirror). The LLM only has to get a single 60°
 wedge right and perfect symmetry is guaranteed by construction. See
-`examples/snowflake.json` — 17 wedge beads expand to a full snowflake.
+`examples/snowflake.json` — 17 wedge beads expand to a full snowflake — and the three
+doily samples (`classic-doily`, `rose-doily`, `winter-doily`), each defined in ~30-40
+wedge beads.
+
+### Physical connectivity matters
+
+A fused piece only holds together where beads touch: along contiguous arcs within a
+ring, and radially where pegs of adjacent rings line up (which is guaranteed along the
+symmetry spokes). Isolated beads and floating mid-wedge islands literally fall off
+after ironing. The doily examples follow this rule — solid anchor rings, eyelet bands
+cut into solid bands, arcs anchored to spoke columns, and rim scallops whose endpoints
+meet the shoulder arcs — and the generated LLM prompt now instructs models to do the
+same. An automated connectivity checker is on the roadmap.
 
 The same symmetry tools work for hand-painting: set Fold/Mirror in the sidebar and
 every peg you paint places all its symmetric copies.

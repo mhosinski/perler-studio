@@ -579,7 +579,7 @@ Output schema:
 Rules:
 - Every bead must reference a valid peg on the board (respect each ring's peg count / the grid bounds).
 - Omit pegs you want left empty; do not invent a background fill unless asked.
-- Keep the design physically buildable: adjacent beads form the image, isolated single beads are fine on a pegboard.
+- Keep the design physically buildable: the piece must hold together after fusing, so every bead needs at least one touching neighbor (adjacent index on the same ring, or a radially aligned bead on the next ring — pegs align radially along symmetry spokes). No isolated beads or floating islands.
 - Prefer 3-6 colors unless asked otherwise.${wedge}
 
 Design request: <DESCRIBE THE DESIGN YOU WANT HERE>`;
