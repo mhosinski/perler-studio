@@ -103,7 +103,9 @@ state.** Every board belongs to a named design; edits persist to the browser's
 - Loading an example or pasting JSON always **creates a new design** — it never
   replaces the one you're on.
 - **Clear board** just erases the beads of the current design (undoable, like any
-  edit). It has nothing to do with saving.
+  edit). It has nothing to do with saving — and it stashes the pre-clear pattern on
+  the design, so **Restore cleared beads** in the Design panel can bring it back even
+  after the session ends.
 - Undo history is per-session and per-design; switching designs resets it.
 
 Storage is per-browser, per-device: designs saved on the iPad won't appear on a laptop,
