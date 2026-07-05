@@ -1,0 +1,743 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Perler Pattern Studio</title>
+<style>
+  :root {
+    --bg: #f2efe9;
+    --panel: #ffffff;
+    --ink: #2b2a27;
+    --muted: #7a766e;
+    --line: #e0dcd2;
+    --accent: #d97706;
+    --plate: #f8f6f0;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    display: grid;
+    grid-template-columns: 300px 1fr;
+  }
+  aside {
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    padding: 16px;
+    overflow-y: auto;
+  }
+  aside h1 { font-size: 17px; margin: 0 0 2px; }
+  aside .sub { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+  section { border-top: 1px solid var(--line); padding: 12px 0; }
+  section h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted); margin: 0 0 8px;
+  }
+  button {
+    font: inherit; font-size: 13px;
+    background: #faf8f4; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: 5px 10px; cursor: pointer;
+  }
+  button:hover { border-color: #c8c3b6; background: #fff; }
+  button.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  label { font-size: 13px; }
+  select, input[type=number], input[type=text] {
+    font: inherit; font-size: 13px; padding: 4px 6px;
+    border: 1px solid var(--line); border-radius: 6px; background: #fff;
+  }
+  input[type=number] { width: 62px; }
+  #palette {
+    display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px;
+  }
+  #palette button {
+    aspect-ratio: 1; padding: 0; border-radius: 50%;
+    border: 2px solid rgba(0,0,0,.12);
+  }
+  #palette button.sel { outline: 3px solid var(--ink); outline-offset: 1px; }
+  #curColor { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  #counts { font-size: 12.5px; }
+  #counts .c-row { display: flex; align-items: center; gap: 7px; padding: 2px 0; }
+  #counts .swatch {
+    width: 13px; height: 13px; border-radius: 50%;
+    border: 1px solid rgba(0,0,0,.18); flex: none;
+  }
+  #counts .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+  main { display: flex; flex-direction: column; min-width: 0; }
+  #stage {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    padding: 14px; min-height: 0;
+  }
+  #board { width: 100%; height: 100%; max-width: 860px; touch-action: none; }
+  #board [data-key] { cursor: crosshair; }
+  #board [data-key]:hover .outer { stroke: #6b665c; stroke-width: .8; }
+  #jsonPanel {
+    border-top: 1px solid var(--line); background: var(--panel);
+    padding: 10px 14px; display: flex; flex-direction: column; gap: 8px;
+  }
+  #jsonPanel textarea {
+    width: 100%; height: 110px; resize: vertical;
+    font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    border: 1px solid var(--line); border-radius: 6px; padding: 8px;
+    background: #fbfaf7; color: var(--ink);
+  }
+  details { font-size: 12.5px; }
+  details summary { cursor: pointer; color: var(--muted); }
+  .note { font-size: 11.5px; color: var(--muted); margin-top: 10px; }
+  #toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    background: var(--ink); color: #fff; padding: 8px 16px; border-radius: 8px;
+    font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .25s;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<aside>
+  <h1>Perler Pattern Studio</h1>
+  <div class="sub">Deterministic bead patterns from structured data</div>
+
+  <section>
+    <h2>Tools</h2>
+    <div class="row">
+      <button id="toolPaint" class="active">🖌 Paint</button>
+      <button id="toolErase">⌫ Erase</button>
+      <button id="btnUndo" title="Cmd/Ctrl+Z">↩ Undo</button>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <button id="btnClear">Clear board</button>
+      <button id="btnDemo">Load demo</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Palette</h2>
+    <div id="palette"></div>
+    <div id="curColor"></div>
+  </section>
+
+  <section>
+    <h2>Symmetry</h2>
+    <div class="row">
+      <label>Fold <select id="symFold"></select></label>
+      <label><input type="checkbox" id="symMirror"> Mirror</label>
+    </div>
+    <div class="note">Painting one peg paints all symmetric copies.</div>
+  </section>
+
+  <section>
+    <h2>Board</h2>
+    <div class="row">
+      <label>Type
+        <select id="boardType">
+          <option value="polar">Circle (rings)</option>
+          <option value="square">Square grid</option>
+        </select>
+      </label>
+    </div>
+    <div id="polarCtl" class="row" style="margin-top:6px">
+      <label>Rings <input type="number" id="ringCount" min="2" max="30" value="14"></label>
+    </div>
+    <details id="polarAdv" style="margin-top:6px">
+      <summary>Custom pegs-per-ring</summary>
+      <input type="text" id="ringList" placeholder="e.g. 1,6,12,18,24" style="width:100%;margin-top:4px">
+      <div class="note">Overrides the ring count. Ring 0 is the center peg. Leave blank for the default 6·n pegs per ring.</div>
+    </details>
+    <div id="squareCtl" class="row" style="margin-top:6px; display:none">
+      <label>W <input type="number" id="sqW" min="2" max="60" value="29"></label>
+      <label>H <input type="number" id="sqH" min="2" max="60" value="29"></label>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="btnRebuild" class="primary">Rebuild board</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Bead counts</h2>
+    <div id="counts"></div>
+  </section>
+
+  <div class="note">Colors are screen approximations of Perler catalog colors. Mouse recommended for drag-painting.</div>
+</aside>
+
+<main>
+  <div id="stage"><svg id="board" xmlns="http://www.w3.org/2000/svg"></svg></div>
+  <div id="jsonPanel">
+    <div class="row">
+      <button id="btnLoadJson" class="primary">⇧ Load JSON from text</button>
+      <button id="btnCopyJson">Copy JSON</button>
+      <button id="btnDlJson">Download JSON</button>
+      <button id="btnDlSvg">Download SVG</button>
+      <button id="btnPrompt">📋 Copy LLM prompt</button>
+    </div>
+    <textarea id="jsonBox" spellcheck="false"></textarea>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+/* ---------------- Palette (approximate Perler catalog colors) ---------------- */
+const PALETTE = [
+  ['white', 'White', '#fdfdfc'],
+  ['cream', 'Cream', '#ede8c8'],
+  ['yellow', 'Yellow', '#fcd905'],
+  ['cheddar', 'Cheddar', '#ffb632'],
+  ['orange', 'Orange', '#f97e20'],
+  ['butterscotch', 'Butterscotch', '#dfa356'],
+  ['hot-coral', 'Hot Coral', '#ff424c'],
+  ['red', 'Red', '#d02b2e'],
+  ['cherry', 'Cherry', '#b02342'],
+  ['cranapple', 'Cranapple', '#7e2b47'],
+  ['raspberry', 'Raspberry', '#ad3f77'],
+  ['bubblegum', 'Bubblegum', '#ec6fa9'],
+  ['pink', 'Pink', '#dd6ba4'],
+  ['light-pink', 'Light Pink', '#f8c9d8'],
+  ['magenta', 'Magenta', '#f13596'],
+  ['purple', 'Purple', '#654e9f'],
+  ['pastel-lavender', 'Pastel Lavender', '#b1a0d6'],
+  ['plum', 'Plum', '#a54f9e'],
+  ['dark-blue', 'Dark Blue', '#2b3f87'],
+  ['blue', 'Blue', '#2f5fa5'],
+  ['cobalt', 'Cobalt', '#0f5bbd'],
+  ['light-blue', 'Light Blue', '#3d9ae0'],
+  ['pastel-blue', 'Pastel Blue', '#8cb5e2'],
+  ['robins-egg', "Robin's Egg", '#9cd6dc'],
+  ['turquoise', 'Turquoise', '#17a6b7'],
+  ['toothpaste', 'Toothpaste', '#bfe3e0'],
+  ['parrot-green', 'Parrot Green', '#0f9e8a'],
+  ['dark-green', 'Dark Green', '#0e6b3c'],
+  ['green', 'Green', '#169b4e'],
+  ['bright-green', 'Bright Green', '#4fbe53'],
+  ['light-green', 'Light Green', '#71c968'],
+  ['pastel-green', 'Pastel Green', '#a9dcae'],
+  ['kiwi-lime', 'Kiwi Lime', '#9ccb3b'],
+  ['prickly-pear', 'Prickly Pear', '#cbdf46'],
+  ['sand', 'Sand', '#e6d3a7'],
+  ['tan', 'Tan', '#ceac83'],
+  ['light-brown', 'Light Brown', '#8f6b4a'],
+  ['brown', 'Brown', '#57402f'],
+  ['rust', 'Rust', '#a04a34'],
+  ['salmon', 'Salmon', '#f98973'],
+  ['peach', 'Peach', '#f9c5a6'],
+  ['gray', 'Gray', '#9a9c9e'],
+  ['pewter', 'Pewter', '#7d8288'],
+  ['dark-gray', 'Dark Gray', '#53575d'],
+  ['black', 'Black', '#2b2b2b'],
+  ['gold', 'Gold', '#bb9241'],
+].map(([id, name, hex]) => ({ id, name, hex }));
+
+const PAL = Object.fromEntries(PALETTE.map(p => [p.id, p]));
+function colorInfo(c) {
+  if (PAL[c]) return PAL[c];
+  if (/^#[0-9a-f]{6}$/i.test(c)) return { id: c, name: c, hex: c };
+  return null;
+}
+
+/* ---------------- State ---------------- */
+const PITCH = 10, BEAD_R = 4.7, HOLE_R = 1.9, DOT_R = 1.25;
+const PLATE_BG = '#f8f6f0';
+
+let board = defaultBoard();
+let beads = new Map();          // key -> color id
+let pegEls = new Map();         // key -> {outer, hole, dot}
+let curColor = 'yellow';
+let tool = 'paint';
+let sym = { fold: 1, mirror: false };
+let undoStack = [];
+
+function defaultBoard() {
+  return { type: 'polar', name: 'circle-14', rings: ringsFor(14) };
+}
+function ringsFor(n) {
+  return Array.from({ length: n }, (_, r) => r === 0 ? 1 : 6 * r);
+}
+
+/* ---------------- Geometry & board build ---------------- */
+function pegPositions() {
+  const out = [];
+  if (board.type === 'polar') {
+    board.rings.forEach((count, r) => {
+      for (let i = 0; i < count; i++) {
+        const a = (-90 + 360 * i / count) * Math.PI / 180;
+        out.push({ key: r + ',' + i, x: r * PITCH * Math.cos(a), y: r * PITCH * Math.sin(a) });
+      }
+    });
+  } else {
+    const { width: W, height: H } = board;
+    for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
+      out.push({ key: r + ',' + c, x: (c - (W - 1) / 2) * PITCH, y: (r - (H - 1) / 2) * PITCH });
+    }
+  }
+  return out;
+}
+
+const svg = document.getElementById('board');
+const NS = 'http://www.w3.org/2000/svg';
+
+function buildBoard() {
+  svg.innerHTML = '';
+  pegEls.clear();
+  let ex, ey;
+  if (board.type === 'polar') {
+    ex = ey = (board.rings.length - 1) * PITCH + 9;
+    const plate = document.createElementNS(NS, 'circle');
+    plate.setAttribute('r', ex - 2);
+    plate.setAttribute('fill', PLATE_BG);
+    plate.setAttribute('stroke', '#ddd8ce');
+    svg.appendChild(plate);
+  } else {
+    ex = (board.width - 1) / 2 * PITCH + 9;
+    ey = (board.height - 1) / 2 * PITCH + 9;
+    const plate = document.createElementNS(NS, 'rect');
+    plate.setAttribute('x', -ex + 2); plate.setAttribute('y', -ey + 2);
+    plate.setAttribute('width', 2 * ex - 4); plate.setAttribute('height', 2 * ey - 4);
+    plate.setAttribute('rx', 6);
+    plate.setAttribute('fill', PLATE_BG);
+    plate.setAttribute('stroke', '#ddd8ce');
+    svg.appendChild(plate);
+  }
+  svg.setAttribute('viewBox', `${-ex} ${-ey} ${2 * ex} ${2 * ey}`);
+
+  for (const p of pegPositions()) {
+    const g = document.createElementNS(NS, 'g');
+    g.dataset.key = p.key;
+    const outer = document.createElementNS(NS, 'circle');
+    outer.setAttribute('cx', p.x); outer.setAttribute('cy', p.y);
+    outer.setAttribute('r', BEAD_R);
+    outer.setAttribute('class', 'outer');
+    const hole = document.createElementNS(NS, 'circle');
+    hole.setAttribute('cx', p.x); hole.setAttribute('cy', p.y);
+    hole.setAttribute('r', HOLE_R);
+    const dot = document.createElementNS(NS, 'circle');
+    dot.setAttribute('cx', p.x); dot.setAttribute('cy', p.y);
+    dot.setAttribute('r', DOT_R);
+    g.append(outer, hole, dot);
+    svg.appendChild(g);
+    pegEls.set(p.key, { outer, hole, dot });
+  }
+  renderFills();
+}
+
+function refreshPeg(key) {
+  const el = pegEls.get(key);
+  if (!el) return;
+  const c = beads.get(key);
+  const info = c && colorInfo(c);
+  if (info) {
+    el.outer.setAttribute('fill', info.hex);
+    el.outer.setAttribute('stroke', 'rgba(0,0,0,.28)');
+    el.outer.setAttribute('stroke-width', '.6');
+    el.hole.setAttribute('fill', PLATE_BG);
+    el.dot.setAttribute('fill', 'none');
+  } else {
+    // transparent (not "none") keeps the whole circle clickable when empty
+    el.outer.setAttribute('fill', 'transparent');
+    el.outer.setAttribute('stroke', '#eae6dc');
+    el.outer.setAttribute('stroke-width', '.5');
+    el.hole.setAttribute('fill', 'none');
+    el.dot.setAttribute('fill', '#c6c1b5');
+  }
+}
+function renderFills() { for (const key of pegEls.keys()) refreshPeg(key); }
+
+/* ---------------- Symmetry ---------------- */
+function symCopies(key, s = sym) {
+  const out = new Set([key]);
+  if (board.type === 'polar') {
+    const [r, i] = key.split(',').map(Number);
+    const n = board.rings[r];
+    if (n > 1) {
+      let idxs = [i];
+      if (s.fold > 1 && n % s.fold === 0) {
+        idxs = [];
+        const step = n / s.fold;
+        for (let k = 0; k < s.fold; k++) idxs.push((i + k * step) % n);
+      }
+      if (s.mirror) idxs = idxs.concat(idxs.map(x => (n - x) % n));
+      idxs.forEach(x => out.add(r + ',' + x));
+    }
+  } else {
+    const [r, c] = key.split(',').map(Number);
+    const W = board.width, H = board.height;
+    let pts = [[r, c]];
+    if (s.fold === 2) pts.push([H - 1 - r, W - 1 - c]);
+    if (s.fold === 4 && W === H) pts = [[r, c], [c, W - 1 - r], [H - 1 - r, W - 1 - c], [W - 1 - c, r]];
+    if (s.mirror) pts = pts.concat(pts.map(([a, b]) => [a, W - 1 - b]));
+    pts.forEach(([a, b]) => out.add(a + ',' + b));
+  }
+  return [...out];
+}
+
+/* ---------------- Painting ---------------- */
+function applyAt(key, erase) {
+  for (const k of symCopies(key)) {
+    if (erase) beads.delete(k); else beads.set(k, curColor);
+    refreshPeg(k);
+  }
+  scheduleSync();
+}
+
+let dragging = false, strokeErase = false;
+svg.addEventListener('pointerdown', e => {
+  const t = e.target.closest('[data-key]');
+  if (!t) return;
+  e.preventDefault();
+  snapshot();
+  dragging = true;
+  strokeErase = tool === 'erase' || e.button === 2;
+  applyAt(t.dataset.key, strokeErase);
+});
+svg.addEventListener('pointerover', e => {
+  if (!dragging) return;
+  const t = e.target.closest('[data-key]');
+  if (t) applyAt(t.dataset.key, strokeErase);
+});
+window.addEventListener('pointerup', () => dragging = false);
+svg.addEventListener('contextmenu', e => e.preventDefault());
+
+/* ---------------- Undo ---------------- */
+function snapshot() {
+  undoStack.push(new Map(beads));
+  if (undoStack.length > 60) undoStack.shift();
+}
+function undo() {
+  if (!undoStack.length) return;
+  beads = undoStack.pop();
+  renderFills();
+  scheduleSync();
+}
+window.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
+});
+
+/* ---------------- JSON in/out ---------------- */
+const jsonBox = document.getElementById('jsonBox');
+
+function currentJSON() {
+  const arr = [];
+  for (const [key, color] of beads) {
+    const [a, b] = key.split(',').map(Number);
+    arr.push(board.type === 'polar'
+      ? { ring: a, index: b, color }
+      : { row: a, col: b, color });
+  }
+  arr.sort((p, q) => (p.ring ?? p.row) - (q.ring ?? q.row) || (p.index ?? p.col) - (q.index ?? q.col));
+  const b = board.type === 'polar'
+    ? { type: 'polar', name: board.name || 'circle', rings: board.rings }
+    : { type: 'square', name: board.name || 'square', width: board.width, height: board.height };
+  return { version: 1, board: b, beads: arr };
+}
+
+let syncTimer = null;
+function scheduleSync() {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => { syncJSON(); updateCounts(); }, 120);
+}
+function syncJSON() {
+  jsonBox.value = JSON.stringify(currentJSON(), null, 1);
+}
+
+function loadFromJSON(text) {
+  let j;
+  try { j = JSON.parse(text); } catch (err) { toast('Invalid JSON: ' + err.message); return; }
+  if (!j || !j.board || !Array.isArray(j.beads)) { toast('Expected { board, beads } object'); return; }
+  const nb = j.board;
+  if (nb.type === 'polar') {
+    if (!Array.isArray(nb.rings) || !nb.rings.every(n => Number.isInteger(n) && n > 0)) {
+      toast('board.rings must be an array of positive integers'); return;
+    }
+    board = { type: 'polar', name: nb.name || 'circle', rings: nb.rings };
+  } else if (nb.type === 'square') {
+    if (!Number.isInteger(nb.width) || !Number.isInteger(nb.height) || nb.width < 1 || nb.height < 1) {
+      toast('board.width/height must be positive integers'); return;
+    }
+    board = { type: 'square', name: nb.name || 'square', width: nb.width, height: nb.height };
+  } else { toast('board.type must be "polar" or "square"'); return; }
+
+  snapshot();
+  beads = new Map();
+  const s = j.symmetry && Number.isInteger(j.symmetry.fold)
+    ? { fold: j.symmetry.fold, mirror: !!j.symmetry.mirror }
+    : { fold: 1, mirror: false };
+  let skipped = 0;
+  for (const bd of j.beads) {
+    if (!bd || !colorInfo(bd.color)) { skipped++; continue; }
+    let key;
+    if (board.type === 'polar') {
+      if (!Number.isInteger(bd.ring) || !Number.isInteger(bd.index) ||
+          bd.ring < 0 || bd.ring >= board.rings.length) { skipped++; continue; }
+      const n = board.rings[bd.ring];
+      key = bd.ring + ',' + (((bd.index % n) + n) % n);
+    } else {
+      if (!Number.isInteger(bd.row) || !Number.isInteger(bd.col) ||
+          bd.row < 0 || bd.row >= board.height || bd.col < 0 || bd.col >= board.width) { skipped++; continue; }
+      key = bd.row + ',' + bd.col;
+    }
+    for (const k of symCopies(key, s)) beads.set(k, bd.color);
+  }
+  syncBoardControls();
+  buildSymOptions();
+  buildBoard();
+  scheduleSync();
+  toast('Pattern loaded' + (skipped ? ` (${skipped} invalid beads skipped)` : ''));
+}
+
+/* ---------------- Counts ---------------- */
+function updateCounts() {
+  const tally = new Map();
+  for (const c of beads.values()) tally.set(c, (tally.get(c) || 0) + 1);
+  const rows = [...tally.entries()].sort((a, b) => b[1] - a[1]);
+  const el = document.getElementById('counts');
+  el.innerHTML = '';
+  let total = 0;
+  for (const [c, n] of rows) {
+    total += n;
+    const info = colorInfo(c);
+    const div = document.createElement('div');
+    div.className = 'c-row';
+    div.innerHTML = `<span class="swatch" style="background:${info.hex}"></span>` +
+      `<span>${info.name}</span><span class="n">${n}</span>`;
+    el.appendChild(div);
+  }
+  const tot = document.createElement('div');
+  tot.className = 'c-row';
+  tot.style.borderTop = '1px solid var(--line)';
+  tot.style.marginTop = '4px';
+  tot.innerHTML = `<strong>Total</strong><span class="n">${total}</span>`;
+  el.appendChild(tot);
+}
+
+/* ---------------- Demo pattern (inspired by the photo) ---------------- */
+function demoPattern() {
+  const b = new Map();
+  const R = board.rings;
+  const set = (r, i, c) => {
+    if (r >= R.length) return;
+    const n = R[r];
+    b.set(r + ',' + (((i % n) + n) % n), c);
+  };
+  for (let i = 0; i < 6; i++) set(1, i, 'hot-coral');
+  for (let i = 0; i < 12; i++) set(2, i, 'orange');
+  for (let r = 3; r <= 7 && r < R.length; r++) {
+    const n = R[r] / 6;
+    for (let k = 0; k < 6; k++) set(r, k * n, 'yellow');
+  }
+  if (R.length > 7) {
+    const n = R[7] / 6;
+    for (let k = 0; k < 6; k++)
+      for (let t = 2; t <= n - 2; t++) set(7, k * n + t, 'white');
+  }
+  for (let r = 8; r <= 12 && r < R.length; r++) {
+    const n = R[r] / 6;
+    for (let k = 0; k < 6; k++) set(r, k * n, 'white');
+  }
+  const petals = { 10: [4, 6], 11: [3, 8], 12: [2, 10] };
+  for (const [rs, [a, z]] of Object.entries(petals)) {
+    const r = +rs;
+    if (r >= R.length) continue;
+    const n = R[r] / 6;
+    for (let k = 0; k < 6; k++)
+      for (let t = a; t <= z; t++) set(r, k * n + t, 'white');
+  }
+  return b;
+}
+
+/* ---------------- LLM prompt ---------------- */
+function buildPrompt() {
+  const b = currentJSON().board;
+  const boardDesc = b.type === 'polar'
+    ? `The board is CIRCULAR: pegs sit on concentric rings. Ring r has exactly rings[r] pegs (ring 0 is the single center peg). Within a ring, index 0 is at 12 o'clock and indices increase clockwise, evenly spaced. Board definition:\n${JSON.stringify(b)}`
+    : `The board is a SQUARE grid, ${b.width} columns x ${b.height} rows. row 0 is the top, col 0 is the left. Board definition:\n${JSON.stringify(b)}`;
+  const wedge = b.type === 'polar'
+    ? `\nSYMMETRY (strongly recommended for circular designs): add "symmetry": {"fold": F, "mirror": true|false} at the top level and list beads for ONE wedge only — for each ring use only indices 0 through (ringCount/F)-1. The renderer replicates the wedge F times around the circle (fold 6 works on every ring of this board). Mirror reflects across the 12 o'clock axis for snowflake-style symmetry.`
+    : '';
+  return `You are designing a fuse-bead (Perler) pattern. Respond with ONLY a JSON object — no prose, no markdown code fences.
+
+${boardDesc}
+
+Allowed color ids (use these exact strings):
+${PALETTE.map(p => p.id).join(', ')}
+
+Output schema:
+{
+ "version": 1,
+ "board": <copy the board definition above EXACTLY>,
+ "symmetry": {"fold": 6, "mirror": false},   // optional, see below
+ "beads": [ ${b.type === 'polar' ? '{"ring": 2, "index": 5, "color": "yellow"}' : '{"row": 3, "col": 7, "color": "yellow"}'}, ... ]
+}
+
+Rules:
+- Every bead must reference a valid peg on the board (respect each ring's peg count / the grid bounds).
+- Omit pegs you want left empty; do not invent a background fill unless asked.
+- Keep the design physically buildable: adjacent beads form the image, isolated single beads are fine on a pegboard.
+- Prefer 3-6 colors unless asked otherwise.${wedge}
+
+Design request: <DESCRIBE THE DESIGN YOU WANT HERE>`;
+}
+
+/* ---------------- Downloads / clipboard ---------------- */
+function downloadFile(name, text, mime) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: mime }));
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function copyText(text, msg) {
+  navigator.clipboard.writeText(text).then(
+    () => toast(msg),
+    () => toast('Clipboard blocked — select the text manually'));
+}
+function svgMarkup() {
+  const clone = svg.cloneNode(true);
+  clone.setAttribute('xmlns', NS);
+  const vb = svg.getAttribute('viewBox').split(' ').map(Number);
+  clone.setAttribute('width', 1000);
+  clone.setAttribute('height', Math.round(1000 * vb[3] / vb[2]));
+  const bg = document.createElementNS(NS, 'rect');
+  bg.setAttribute('x', vb[0]); bg.setAttribute('y', vb[1]);
+  bg.setAttribute('width', vb[2]); bg.setAttribute('height', vb[3]);
+  bg.setAttribute('fill', '#f2efe9');
+  clone.insertBefore(bg, clone.firstChild);
+  return new XMLSerializer().serializeToString(clone);
+}
+
+/* ---------------- UI wiring ---------------- */
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+function buildPalette() {
+  const el = document.getElementById('palette');
+  el.innerHTML = '';
+  for (const p of PALETTE) {
+    const btn = document.createElement('button');
+    btn.style.background = p.hex;
+    btn.title = p.name;
+    btn.dataset.id = p.id;
+    if (p.id === curColor) btn.classList.add('sel');
+    btn.addEventListener('click', () => {
+      curColor = p.id;
+      tool = 'paint';
+      setToolButtons();
+      el.querySelectorAll('button').forEach(b => b.classList.toggle('sel', b.dataset.id === p.id));
+      document.getElementById('curColor').textContent = 'Selected: ' + p.name;
+    });
+    el.appendChild(btn);
+  }
+  document.getElementById('curColor').textContent = 'Selected: ' + PAL[curColor].name;
+}
+
+function setToolButtons() {
+  document.getElementById('toolPaint').classList.toggle('active', tool === 'paint');
+  document.getElementById('toolErase').classList.toggle('active', tool === 'erase');
+}
+document.getElementById('toolPaint').addEventListener('click', () => { tool = 'paint'; setToolButtons(); });
+document.getElementById('toolErase').addEventListener('click', () => { tool = 'erase'; setToolButtons(); });
+document.getElementById('btnUndo').addEventListener('click', undo);
+
+document.getElementById('btnClear').addEventListener('click', () => {
+  if (beads.size && !confirm('Clear all beads?')) return;
+  snapshot();
+  beads = new Map();
+  renderFills();
+  scheduleSync();
+});
+document.getElementById('btnDemo').addEventListener('click', () => {
+  snapshot();
+  board = defaultBoard();
+  syncBoardControls();
+  buildSymOptions();
+  buildBoard();
+  beads = demoPattern();
+  renderFills();
+  scheduleSync();
+});
+
+function buildSymOptions() {
+  const folds = board.type === 'polar' ? [1, 2, 3, 6, 12] : [1, 2, 4];
+  const sel = document.getElementById('symFold');
+  sel.innerHTML = folds.map(f => `<option value="${f}">${f === 1 ? 'Off' : f + '×'}</option>`).join('');
+  if (!folds.includes(sym.fold)) sym.fold = 1;
+  sel.value = sym.fold;
+}
+document.getElementById('symFold').addEventListener('change', e => sym.fold = +e.target.value);
+document.getElementById('symMirror').addEventListener('change', e => sym.mirror = e.target.checked);
+
+const typeSel = document.getElementById('boardType');
+typeSel.addEventListener('change', () => {
+  const polar = typeSel.value === 'polar';
+  document.getElementById('polarCtl').style.display = polar ? '' : 'none';
+  document.getElementById('polarAdv').style.display = polar ? '' : 'none';
+  document.getElementById('squareCtl').style.display = polar ? 'none' : '';
+});
+function syncBoardControls() {
+  typeSel.value = board.type;
+  typeSel.dispatchEvent(new Event('change'));
+  if (board.type === 'polar') {
+    document.getElementById('ringCount').value = board.rings.length;
+    const isDefault = JSON.stringify(board.rings) === JSON.stringify(ringsFor(board.rings.length));
+    document.getElementById('ringList').value = isDefault ? '' : board.rings.join(',');
+  } else {
+    document.getElementById('sqW').value = board.width;
+    document.getElementById('sqH').value = board.height;
+  }
+}
+
+document.getElementById('btnRebuild').addEventListener('click', () => {
+  if (beads.size && !confirm('Rebuilding the board clears the current pattern. Continue?')) return;
+  if (typeSel.value === 'polar') {
+    const listRaw = document.getElementById('ringList').value.trim();
+    let rings;
+    if (listRaw) {
+      rings = listRaw.split(',').map(s => parseInt(s.trim(), 10));
+      if (rings.some(n => !Number.isInteger(n) || n < 1)) { toast('Ring list must be positive integers'); return; }
+    } else {
+      const n = Math.max(2, Math.min(30, +document.getElementById('ringCount').value || 14));
+      rings = ringsFor(n);
+    }
+    board = { type: 'polar', name: 'circle-' + rings.length, rings };
+  } else {
+    const W = Math.max(2, Math.min(60, +document.getElementById('sqW').value || 29));
+    const H = Math.max(2, Math.min(60, +document.getElementById('sqH').value || 29));
+    board = { type: 'square', name: `square-${W}x${H}`, width: W, height: H };
+  }
+  snapshot();
+  beads = new Map();
+  buildSymOptions();
+  buildBoard();
+  scheduleSync();
+});
+
+document.getElementById('btnLoadJson').addEventListener('click', () => loadFromJSON(jsonBox.value));
+document.getElementById('btnCopyJson').addEventListener('click', () => copyText(JSON.stringify(currentJSON()), 'Pattern JSON copied'));
+document.getElementById('btnDlJson').addEventListener('click', () => downloadFile('pattern.json', JSON.stringify(currentJSON(), null, 2), 'application/json'));
+document.getElementById('btnDlSvg').addEventListener('click', () => downloadFile('pattern.svg', svgMarkup(), 'image/svg+xml'));
+document.getElementById('btnPrompt').addEventListener('click', () => copyText(buildPrompt(), 'LLM prompt copied — paste it into any chatbot'));
+
+/* ---------------- Init ---------------- */
+buildPalette();
+buildSymOptions();
+syncBoardControls();
+buildBoard();
+beads = demoPattern();
+renderFills();
+syncJSON();
+updateCounts();
+</script>
+</body>
+</html>
