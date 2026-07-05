@@ -108,6 +108,7 @@
     user-select: none;
     -webkit-user-select: none;
     -webkit-touch-callout: none;
+    touch-action: none; /* multi-finger taps must reach us, not the scroller */
   }
   #board { width: 100%; height: 100%; max-width: 860px; touch-action: none; }
   #board [data-key] { cursor: crosshair; }
@@ -595,14 +596,16 @@ function restoreState(state) {
   scheduleSync();
 }
 function undo() {
-  if (!undoStack.length) return;
+  if (!undoStack.length) return false;
   redoStack.push(stateNow());
   restoreState(undoStack.pop());
+  return true;
 }
 function redo() {
-  if (!redoStack.length) return;
+  if (!redoStack.length) return false;
   undoStack.push(stateNow());
   restoreState(redoStack.pop());
+  return true;
 }
 window.addEventListener('keydown', e => {
   if (!(e.metaKey || e.ctrlKey)) return;
@@ -610,6 +613,55 @@ window.addEventListener('keydown', e => {
   if (k === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
   else if (k === 'y') { e.preventDefault(); redo(); }
 });
+
+/* ---------------- Touch gestures (Procreate-style) ---------------- */
+// Two-finger tap = undo, three-finger tap = redo. Touch only: pen and mouse
+// always paint. Clear-board deliberately has no gesture — destructive actions
+// stay behind the explicit button.
+const stageEl = document.getElementById('stage');
+const gestureTouches = new Map(); // pointerId -> {x, y}
+let gestureStart = 0, gestureMax = 0, gestureVetoed = false;
+
+stageEl.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'touch') return;
+  if (gestureTouches.size === 0) {
+    gestureStart = performance.now();
+    gestureMax = 0;
+    gestureVetoed = false;
+  }
+  gestureTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  gestureMax = Math.max(gestureMax, gestureTouches.size);
+  // A second finger joining an active paint stroke means this was never a
+  // paint: revert the accidental first-finger stroke before reading the tap.
+  if (gestureTouches.size === 2 && dragging) {
+    dragging = false;
+    if (strokePrev) {
+      beads = new Map(strokePrev.beads);
+      renderFills();
+      scheduleSync();
+      strokePrev = null;
+    }
+  }
+});
+stageEl.addEventListener('pointermove', e => {
+  if (e.pointerType !== 'touch') return;
+  const t = gestureTouches.get(e.pointerId);
+  if (t && Math.hypot(e.clientX - t.x, e.clientY - t.y) > 12) gestureVetoed = true;
+});
+function gestureEnd(e) {
+  if (e.pointerType !== 'touch') return;
+  if (e.type === 'pointercancel') gestureVetoed = true;
+  gestureTouches.delete(e.pointerId);
+  if (gestureTouches.size > 0) return;
+  const quick = performance.now() - gestureStart < 400;
+  if (quick && !gestureVetoed) {
+    if (gestureMax === 2) toast(undo() ? 'Undo' : 'Nothing to undo');
+    else if (gestureMax === 3) toast(redo() ? 'Redo' : 'Nothing to redo');
+  }
+  gestureMax = 0;
+}
+stageEl.addEventListener('pointerup', gestureEnd);
+stageEl.addEventListener('pointercancel', gestureEnd);
 
 /* ---------------- JSON in/out ---------------- */
 const jsonBox = document.getElementById('jsonBox');

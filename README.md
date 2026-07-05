@@ -18,6 +18,10 @@ the renderer working immediately. The **Example** dropdown in the sidebar loads 
 the bundled patterns from `examples/`. The ☾ button next to the title toggles dark
 mode; it follows the system preference by default and remembers an explicit choice.
 
+On touch devices, Procreate-style gestures work over the board: **two-finger tap =
+undo, three-finger tap = redo**. Fingers and pencil paint; there is deliberately no
+clear-board gesture — destructive actions stay behind the explicit button.
+
 > Because the app runs over `file://`, it can't fetch `examples/*.json` at runtime —
 > the examples are embedded into `index.html` at build time. After adding or editing an
 > example, run `node tools/embed-examples.js` to refresh the dropdown.
