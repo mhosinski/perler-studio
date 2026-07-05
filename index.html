@@ -543,12 +543,17 @@ function applyAt(key, erase) {
   scheduleSync();
 }
 
-let dragging = false, strokeErase = false, strokePrev = null;
+let dragging = false, strokeErase = false, strokePrev = null, strokePointer = null;
 svg.addEventListener('pointerdown', e => {
   const t = e.target.closest('[data-key]');
   if (!t) return;
+  if (dragging) return; // one stroke at a time
+  // A touch landing while other touches are already down is a gesture finger
+  // (undo/redo taps), never the start of a paint stroke.
+  if (e.pointerType === 'touch' && gestureTouches.size > 0) return;
   e.preventDefault();
   strokePrev = stateNow();
+  strokePointer = e.pointerId;
   dragging = true;
   strokeErase = tool === 'erase' || e.button === 2;
   applyAt(t.dataset.key, strokeErase);
@@ -557,7 +562,7 @@ svg.addEventListener('pointerdown', e => {
 // touch/pen pointers on the element where the stroke began, so during a drag
 // the event target never changes as the finger or pencil crosses pegs.
 svg.addEventListener('pointermove', e => {
-  if (!dragging) return;
+  if (!dragging || e.pointerId !== strokePointer) return;
   e.preventDefault();
   const el = document.elementFromPoint(e.clientX, e.clientY);
   const t = el && el.closest('[data-key]');
@@ -565,9 +570,11 @@ svg.addEventListener('pointermove', e => {
 });
 // Commit the stroke to the undo stack only if it actually changed something,
 // so painting a bead with its existing color stays a no-op for undo.
-function endStroke() {
+function endStroke(e) {
   if (!dragging) return;
+  if (e && e.pointerId !== strokePointer) return; // another finger lifting
   dragging = false;
+  strokePointer = null;
   if (strokePrev) { commitUndo(strokePrev); strokePrev = null; }
 }
 window.addEventListener('pointerup', endStroke);
@@ -627,6 +634,9 @@ let gestureStart = 0, gestureMax = 0, gestureVetoed = false;
 
 stageEl.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'touch') return;
+  // Safety: if a pointerup was ever lost, don't let stale entries wedge
+  // gesture detection (or block single-touch painting) forever.
+  if (gestureTouches.size && performance.now() - gestureStart > 2000) gestureTouches.clear();
   if (gestureTouches.size === 0) {
     gestureStart = performance.now();
     gestureMax = 0;
@@ -638,6 +648,7 @@ stageEl.addEventListener('pointerdown', e => {
   // paint: revert the accidental first-finger stroke before reading the tap.
   if (gestureTouches.size === 2 && dragging) {
     dragging = false;
+    strokePointer = null;
     if (strokePrev) {
       beads = new Map(strokePrev.beads);
       renderFills();
@@ -649,14 +660,14 @@ stageEl.addEventListener('pointerdown', e => {
 stageEl.addEventListener('pointermove', e => {
   if (e.pointerType !== 'touch') return;
   const t = gestureTouches.get(e.pointerId);
-  if (t && Math.hypot(e.clientX - t.x, e.clientY - t.y) > 12) gestureVetoed = true;
+  if (t && Math.hypot(e.clientX - t.x, e.clientY - t.y) > 24) gestureVetoed = true;
 });
 function gestureEnd(e) {
   if (e.pointerType !== 'touch') return;
   if (e.type === 'pointercancel') gestureVetoed = true;
   gestureTouches.delete(e.pointerId);
   if (gestureTouches.size > 0) return;
-  const quick = performance.now() - gestureStart < 400;
+  const quick = performance.now() - gestureStart < 600;
   if (quick && !gestureVetoed) {
     if (gestureMax === 2) toast(undo() ? 'Undo' : 'Nothing to undo');
     else if (gestureMax === 3) toast(redo() ? 'Redo' : 'Nothing to redo');
