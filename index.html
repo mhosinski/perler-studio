@@ -829,7 +829,11 @@ function persistActive() {
   const s = readStore();
   const e = s[activeId];
   if (!e) return;
-  e.pattern = currentJSON();
+  const pattern = currentJSON();
+  // Only a real content change bumps updatedAt — the list sorts by it, and
+  // merely opening a design must not reorder the list.
+  if (JSON.stringify(pattern) === JSON.stringify(e.pattern)) return;
+  e.pattern = pattern;
   e.updatedAt = nowISO();
   writeStore(s);
   renderSavedList();
@@ -878,10 +882,38 @@ function deleteDesign(id) {
   renderSavedList();
 }
 
+// The visible order is decided by recency once per session, then frozen: rows
+// must not reshuffle while the user jumps between designs mid-stream. New
+// entries (created, imported, or from another tab) enter at the top; recency
+// ordering re-applies on the next visit.
+let listOrder = null;
+function orderedEntries(store) {
+  const byRecency = (a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '');
+  if (!listOrder) listOrder = Object.values(store).sort(byRecency).map(e => e.id);
+  listOrder = listOrder.filter(id => store[id]);
+  const known = new Set(listOrder);
+  const fresh = Object.values(store).filter(e => !known.has(e.id)).sort(byRecency).map(e => e.id);
+  listOrder.unshift(...fresh);
+  return listOrder.map(id => store[id]);
+}
+
+// A long-hidden tab is a session boundary: on return the user is re-orienting
+// anyway, so re-applying recency ordering is never watched. Short hides (quick
+// app switches) keep the frozen order.
+const REORDER_AFTER_HIDDEN_MS = 20 * 60 * 1000;
+let hiddenAt = null;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (hiddenAt && Date.now() - hiddenAt >= REORDER_AFTER_HIDDEN_MS) {
+    listOrder = null;
+    renderSavedList();
+  }
+  hiddenAt = null;
+});
+
 function renderSavedList() {
   const list = document.getElementById('savedList');
-  const entries = Object.values(readStore())
-    .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  const entries = orderedEntries(readStore());
   document.getElementById('designsHeading').textContent =
     entries.length ? `Designs (${entries.length})` : 'Designs';
   list.innerHTML = '';
