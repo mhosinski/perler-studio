@@ -115,6 +115,9 @@
       <button id="btnClear">Clear board</button>
       <button id="btnDemo">Load demo</button>
     </div>
+    <div class="row" style="margin-top:6px">
+      <label>Example <select id="exampleSel"><option value="">Choose…</option></select></label>
+    </div>
   </section>
 
   <section>
@@ -237,6 +240,10 @@ const PALETTE = [
 ].map(([id, name, hex]) => ({ id, name, hex }));
 
 const PAL = Object.fromEntries(PALETTE.map(p => [p.id, p]));
+
+/* Built-in example patterns. Regenerate from examples/*.json with:
+   node tools/embed-examples.js */
+const EXAMPLES = /* EXAMPLES:BEGIN */{"classic-doily":{"version":1,"board":{"type":"polar","name":"circle-14","rings":[1,6,12,18,24,30,36,42,48,54,60,66,72,78]},"symmetry":{"fold":6,"mirror":true},"beads":[{"ring":0,"index":0,"color":"cream"},{"ring":1,"index":0,"color":"white"},{"ring":2,"index":0,"color":"cream"},{"ring":2,"index":1,"color":"cream"},{"ring":3,"index":0,"color":"white"},{"ring":3,"index":1,"color":"white"},{"ring":3,"index":2,"color":"white"},{"ring":4,"index":0,"color":"white"},{"ring":4,"index":1,"color":"white"},{"ring":5,"index":0,"color":"white"},{"ring":5,"index":1,"color":"white"},{"ring":6,"index":0,"color":"cream"},{"ring":6,"index":1,"color":"cream"},{"ring":6,"index":2,"color":"cream"},{"ring":6,"index":3,"color":"cream"},{"ring":7,"index":0,"color":"white"},{"ring":7,"index":1,"color":"white"},{"ring":7,"index":3,"color":"white"},{"ring":8,"index":0,"color":"white"},{"ring":8,"index":1,"color":"white"},{"ring":9,"index":0,"color":"white"},{"ring":9,"index":1,"color":"white"},{"ring":9,"index":2,"color":"white"},{"ring":9,"index":3,"color":"white"},{"ring":9,"index":4,"color":"white"},{"ring":10,"index":0,"color":"cream"},{"ring":10,"index":1,"color":"cream"},{"ring":10,"index":2,"color":"cream"},{"ring":10,"index":4,"color":"cream"},{"ring":11,"index":0,"color":"white"},{"ring":11,"index":1,"color":"white"},{"ring":11,"index":2,"color":"white"},{"ring":11,"index":3,"color":"white"},{"ring":12,"index":3,"color":"white"},{"ring":12,"index":4,"color":"white"},{"ring":12,"index":5,"color":"white"},{"ring":12,"index":6,"color":"white"},{"ring":13,"index":6,"color":"white"}]},"rose-doily":{"version":1,"board":{"type":"polar","name":"circle-14","rings":[1,6,12,18,24,30,36,42,48,54,60,66,72,78]},"symmetry":{"fold":6,"mirror":true},"beads":[{"ring":0,"index":0,"color":"raspberry"},{"ring":1,"index":0,"color":"pink"},{"ring":2,"index":0,"color":"bubblegum"},{"ring":2,"index":1,"color":"bubblegum"},{"ring":3,"index":0,"color":"light-pink"},{"ring":3,"index":1,"color":"light-pink"},{"ring":3,"index":2,"color":"light-pink"},{"ring":4,"index":0,"color":"white"},{"ring":4,"index":1,"color":"white"},{"ring":5,"index":0,"color":"dark-green"},{"ring":5,"index":1,"color":"green"},{"ring":6,"index":0,"color":"white"},{"ring":6,"index":1,"color":"white"},{"ring":6,"index":2,"color":"white"},{"ring":6,"index":3,"color":"white"},{"ring":7,"index":0,"color":"white"},{"ring":7,"index":1,"color":"white"},{"ring":7,"index":3,"color":"white"},{"ring":8,"index":0,"color":"white"},{"ring":9,"index":0,"color":"white"},{"ring":9,"index":1,"color":"white"},{"ring":9,"index":2,"color":"white"},{"ring":9,"index":3,"color":"white"},{"ring":9,"index":4,"color":"white"},{"ring":10,"index":0,"color":"cream"},{"ring":10,"index":1,"color":"cream"},{"ring":10,"index":2,"color":"cream"},{"ring":10,"index":4,"color":"cream"},{"ring":11,"index":0,"color":"white"},{"ring":11,"index":1,"color":"white"},{"ring":11,"index":2,"color":"white"},{"ring":11,"index":3,"color":"white"},{"ring":12,"index":3,"color":"light-pink"},{"ring":12,"index":4,"color":"light-pink"},{"ring":12,"index":5,"color":"light-pink"},{"ring":12,"index":6,"color":"light-pink"},{"ring":13,"index":6,"color":"pink"}]},"snowflake":{"version":1,"board":{"type":"polar","name":"circle-14","rings":[1,6,12,18,24,30,36,42,48,54,60,66,72,78]},"symmetry":{"fold":6,"mirror":true},"beads":[{"ring":0,"index":0,"color":"white"},{"ring":1,"index":0,"color":"light-blue"},{"ring":2,"index":0,"color":"light-blue"},{"ring":3,"index":0,"color":"white"},{"ring":4,"index":0,"color":"light-blue"},{"ring":5,"index":0,"color":"light-blue"},{"ring":6,"index":0,"color":"white"},{"ring":6,"index":1,"color":"light-blue"},{"ring":7,"index":0,"color":"white"},{"ring":7,"index":1,"color":"light-blue"},{"ring":8,"index":0,"color":"white"},{"ring":8,"index":1,"color":"pastel-blue"},{"ring":9,"index":0,"color":"light-blue"},{"ring":9,"index":1,"color":"white"},{"ring":10,"index":0,"color":"light-blue"},{"ring":10,"index":1,"color":"pastel-blue"},{"ring":11,"index":0,"color":"white"}]},"winter-doily":{"version":1,"board":{"type":"polar","name":"circle-14","rings":[1,6,12,18,24,30,36,42,48,54,60,66,72,78]},"symmetry":{"fold":6,"mirror":true},"beads":[{"ring":0,"index":0,"color":"light-blue"},{"ring":1,"index":0,"color":"white"},{"ring":2,"index":0,"color":"pastel-blue"},{"ring":2,"index":1,"color":"pastel-blue"},{"ring":3,"index":0,"color":"white"},{"ring":3,"index":1,"color":"white"},{"ring":3,"index":2,"color":"white"},{"ring":4,"index":0,"color":"light-blue"},{"ring":4,"index":1,"color":"light-blue"},{"ring":5,"index":0,"color":"white"},{"ring":5,"index":1,"color":"white"},{"ring":6,"index":0,"color":"pastel-blue"},{"ring":6,"index":1,"color":"pastel-blue"},{"ring":6,"index":2,"color":"pastel-blue"},{"ring":6,"index":3,"color":"pastel-blue"},{"ring":7,"index":0,"color":"white"},{"ring":7,"index":1,"color":"white"},{"ring":7,"index":3,"color":"white"},{"ring":8,"index":0,"color":"pastel-blue"},{"ring":9,"index":0,"color":"white"},{"ring":9,"index":1,"color":"white"},{"ring":9,"index":2,"color":"white"},{"ring":9,"index":3,"color":"white"},{"ring":9,"index":4,"color":"white"},{"ring":10,"index":0,"color":"pastel-blue"},{"ring":10,"index":1,"color":"pastel-blue"},{"ring":10,"index":2,"color":"pastel-blue"},{"ring":11,"index":0,"color":"light-blue"},{"ring":11,"index":1,"color":"light-blue"},{"ring":12,"index":0,"color":"white"},{"ring":13,"index":0,"color":"light-blue"}]}}/* EXAMPLES:END */;
 function colorInfo(c) {
   if (PAL[c]) return PAL[c];
   if (/^#[0-9a-f]{6}$/i.test(c)) return { id: c, name: c, hex: c };
@@ -657,6 +664,23 @@ document.getElementById('btnClear').addEventListener('click', () => {
   renderFills();
   scheduleSync();
 });
+(function () {
+  const sel = document.getElementById('exampleSel');
+  const names = Object.keys(EXAMPLES);
+  for (const n of names) {
+    const o = document.createElement('option');
+    o.value = n;
+    o.textContent = n;
+    sel.appendChild(o);
+  }
+  sel.addEventListener('change', () => {
+    if (!sel.value) return;
+    loadFromJSON(JSON.stringify(EXAMPLES[sel.value]));
+    sel.value = '';
+  });
+  if (!names.length) sel.closest('.row').style.display = 'none';
+})();
+
 document.getElementById('btnDemo').addEventListener('click', () => {
   snapshot();
   board = defaultBoard();

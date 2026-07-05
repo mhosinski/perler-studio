@@ -18,11 +18,11 @@
     { "ring": 7, "index": 0, "color": "white" },
     { "ring": 7, "index": 1, "color": "light-blue" },
     { "ring": 8, "index": 0, "color": "white" },
-    { "ring": 8, "index": 2, "color": "pastel-blue" },
+    { "ring": 8, "index": 1, "color": "pastel-blue" },
     { "ring": 9, "index": 0, "color": "light-blue" },
     { "ring": 9, "index": 1, "color": "white" },
     { "ring": 10, "index": 0, "color": "light-blue" },
-    { "ring": 10, "index": 2, "color": "pastel-blue" },
+    { "ring": 10, "index": 1, "color": "pastel-blue" },
     { "ring": 11, "index": 0, "color": "white" }
   ]
 }

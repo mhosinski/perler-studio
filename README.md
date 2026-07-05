@@ -14,7 +14,12 @@ open index.html
 ```
 
 It loads with a demo pattern (inspired by a real circular-board mandala) so you can see
-the renderer working immediately.
+the renderer working immediately. The **Example** dropdown in the sidebar loads any of
+the bundled patterns from `examples/`.
+
+> Because the app runs over `file://`, it can't fetch `examples/*.json` at runtime —
+> the examples are embedded into `index.html` at build time. After adding or editing an
+> example, run `node tools/embed-examples.js` to refresh the dropdown.
 
 ## How it works
 
@@ -69,8 +74,8 @@ ring, and radially where pegs of adjacent rings line up (which is guaranteed alo
 symmetry spokes). Isolated beads and floating mid-wedge islands literally fall off
 after ironing. The doily examples follow this rule — solid anchor rings, eyelet bands
 cut into solid bands, arcs anchored to spoke columns, and rim scallops whose endpoints
-meet the shoulder arcs — and the generated LLM prompt now instructs models to do the
-same. An automated connectivity checker is on the roadmap.
+meet the shoulder arcs — and the generated LLM prompt instructs models to do the same.
+`tools/inspect.js` checks this automatically.
 
 The same symmetry tools work for hand-painting: set Fold/Mirror in the sidebar and
 every peg you paint places all its symmetric copies.
@@ -110,6 +115,25 @@ real circular plate:
    `1,6,12,18,24,...`, then **Rebuild board**.
 
 Everything downstream (renderer, symmetry, LLM prompt) adapts automatically.
+
+## Tools
+
+Dependency-free node scripts in `tools/`, extracted from the design-iteration loop:
+
+- `node tools/inspect.js <pattern.json> [--strict]` — expands wedge symmetry exactly
+  like the app and prints per-ring occupancy, color counts, and a **connectivity
+  check** (connected components by physical bead contact). Exits non-zero if beads
+  would fall off after fusing. The default threshold counts stagger contact between
+  adjacent rings (ironing spreads beads); `--strict` counts only guaranteed contact,
+  useful as an "iron this part carefully" warning.
+- `node tools/preview.js <pattern.json> [out.png]` — renders a pattern to PNG through
+  the app's own renderer via headless Chrome (`$CHROME` overrides the binary path).
+  This is the previz loop: author JSON → preview → adjust, no browser clicking.
+- `node tools/embed-examples.js` — regenerates the embedded examples block in
+  `index.html` from `examples/*.json`.
+
+The recommended authoring loop for new patterns: edit JSON → `inspect` (structure +
+buildability) → `preview` (aesthetics) → embed.
 
 ## Ideas for the next iteration
 
