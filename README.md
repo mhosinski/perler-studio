@@ -159,6 +159,15 @@ Everything downstream (renderer, symmetry, LLM prompt) adapts automatically.
 
 Dependency-free node scripts in `tools/`, extracted from the design-iteration loop:
 
+- `tools/core.js` — the shared pattern core: symmetry expansion, bead-list
+  expansion/validation, and the fused-connectivity model. It is the single
+  source of truth, embedded into `index.html` at build time (so the app stays
+  one self-contained file) and `require()`'d by the other tools. After editing
+  it, run `node tools/embed-core.js` to refresh the embedded copy — a test
+  fails if the two drift apart.
+- `node --test` — runs the test suite in `test/` (uses node's built-in runner,
+  no install needed): symmetry orbits, connectivity fixtures at both contact
+  thresholds, bead-expansion validation, and the embed-drift check.
 - `node tools/inspect.js <pattern.json> [--strict]` — expands wedge symmetry exactly
   like the app and prints per-ring occupancy, color counts, and a **connectivity
   check** (connected components by physical bead contact). Exits non-zero if beads

@@ -60,18 +60,73 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 ## Build & Test
 
-_Add your build and test commands here_
+There is **no build step and no dependency install** — the app is a single
+`index.html` that runs from disk. This is a deliberate constraint, not an
+omission.
 
 ```bash
-# Example:
-# npm install
-# npm test
+open index.html                          # run the app (works over file://, offline)
+node --test                              # run the test suite (test/, built-in runner, no install)
+node tools/inspect.js <pattern.json>     # structure + buildability check; exits 2 on loose islands (--strict for guaranteed-contact only)
+node tools/preview.js <pattern.json>     # render to PNG via headless Chrome ($CHROME overrides the binary)
+node tools/embed-examples.js             # REQUIRED after adding/editing examples/*.json — regenerates the embedded block in index.html
+node tools/embed-core.js                 # REQUIRED after editing tools/core.js — re-embeds it into index.html (a test enforces this)
 ```
+
+Run `node --test` before handing off any change to pattern logic, and
+`tools/preview.js` when a change affects rendering or app startup.
+
+**Deploy:** pushing to `main` publishes to GitHub Pages via
+`.github/workflows/pages.yml`. For user-facing fixes, publishing is part of
+"done." If a deploy flakes, do NOT `gh run rerun --failed` (the duplicated
+artifact hard-fails the deploy) — trigger a fresh run with
+`gh workflow run pages.yml` and verify against
+https://mhosinski.github.io/perler-studio/.
 
 ## Architecture Overview
 
-_Add a brief overview of your project architecture_
+AI-assisted perler/fuse-bead pattern design, built on one principle: **an LLM
+emits structured pattern JSON; a deterministic renderer draws it.** No AI-generated
+imagery of beads, ever.
+
+- **`index.html`** — the entire app: vanilla JS, SVG renderer, no framework.
+  Two board geometries (`polar` rings and `square` grid), wedge-symmetry
+  expansion (paint one peg, all symmetric copies follow), undo/redo,
+  Procreate-style touch gestures, a live fused-connectivity ("holds together")
+  check, and a Procreate-style gallery: designs persist continuously to
+  `localStorage` (v2 id-keyed store); there is no Save button.
+- **`tools/core.js`** — the shared pattern core: symmetry expansion,
+  bead-list expansion/validation, and the fused-connectivity model
+  (contact constants 1.15/1.06). Single source of truth: embedded into
+  `index.html` between `CORE:BEGIN/END` markers (run `node
+  tools/embed-core.js` after editing — a test fails on drift) and
+  `require()`'d by the node tools. Edit the logic HERE, never in the
+  embedded copy.
+- **`tools/`** — dependency-free node scripts for the authoring loop:
+  edit JSON → `inspect.js` (buildability) → `preview.js` (aesthetics) →
+  `embed-examples.js` (ship it in the dropdown).
+- **`examples/*.json`** — bundled patterns, embedded into `index.html` at
+  build time because `fetch()` can't read local files over `file://`.
+- **`test/`** — `node --test` suite covering the core (symmetry orbits,
+  connectivity fixtures, expansion validation, embed drift).
+
+The pattern JSON schema, contact model, and calibration notes are documented
+in `README.md` — keep it authoritative for user-facing behavior.
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+- **Zero dependencies, everywhere.** No npm packages in the app or in
+  `tools/`. New tools must run on bare node; the app must keep working over
+  `file://` (script tags are fine; `fetch()` of local files is not — embed at
+  build time instead, like the examples).
+- **Determinism is the product.** Anything that maps pattern data to pixels
+  or to buildability must be exact and reproducible. Randomness, when a
+  feature needs it, must be seeded/derived (see the per-peg stripe rotation).
+- **Comments explain *why*, not what** — platform quirks (iOS pointer
+  capture, Safari storage eviction), invariants (undo must not bleed across
+  designs), and non-obvious constants get comments; mechanics don't.
+- **Destructive actions stay behind explicit buttons** — no gestures for
+  clear/delete, and cleared/deleted state should be recoverable where
+  feasible (see `beforeClear`).
+- **`localStorage` writes go through read-modify-write** (`readStore` /
+  `writeStore`) so a second open tab is never wholesale clobbered.
