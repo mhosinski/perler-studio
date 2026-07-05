@@ -92,8 +92,15 @@ the working board autosaves on every change and restores on the next visit — c
 tab mid-design and nothing is lost.
 
 Storage is per-browser, per-device: designs saved on the iPad won't appear on a laptop,
-and clearing the browser's site data deletes them. For backups or moving a design
-between devices, use **Download JSON** (and load it back with the JSON panel).
+and clearing the browser's site data deletes them. **Private Browsing discards saves
+when the tab closes** — the panel shows a standing reminder. Saving also requests
+`navigator.storage.persist()` so the OS protects the data from storage-pressure
+eviction where supported.
+
+**Export all** downloads the entire design library as one backup file; **Import**
+merges a backup back in (newer timestamps win, nothing is deleted). Use these for
+backups and for moving designs between devices; **Download JSON** still exports the
+single current pattern.
 
 ## Pattern JSON schema
 

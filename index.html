@@ -189,6 +189,12 @@
       <button id="btnSave" class="primary">Save</button>
     </div>
     <div id="savedList"></div>
+    <div class="row" style="margin-top:8px">
+      <button id="btnExportAll">⬇ Export all</button>
+      <button id="btnImportAll">⬆ Import</button>
+      <input type="file" id="importFile" accept=".json,application/json" style="display:none">
+    </div>
+    <div class="note" id="storageNote"></div>
   </section>
 
   <section>
@@ -650,10 +656,11 @@ function savedDesigns() { return lsRead(STORE_KEY) || {}; }
 function renderSavedList() {
   const list = document.getElementById('savedList');
   const designs = savedDesigns();
-  const names = Object.keys(designs).sort((a, b) => a.localeCompare(b));
+  const names = Object.keys(designs)
+    .sort((a, b) => (designs[b].savedAt || '').localeCompare(designs[a].savedAt || ''));
   list.innerHTML = '';
   if (!names.length) {
-    list.innerHTML = '<div class="note" style="margin-top:2px">Nothing saved yet. Designs live in this browser only — use Download JSON for backups.</div>';
+    list.innerHTML = '<div class="note" style="margin-top:2px">Nothing saved yet.</div>';
     return;
   }
   for (const name of names) {
@@ -695,7 +702,57 @@ document.getElementById('btnSave').addEventListener('click', () => {
   }
   renderSavedList();
   toast(existed ? `Updated "${name}"` : `Saved "${name}"`);
+  // Ask the browser to protect this origin's storage from eviction. Safari
+  // weighs user interaction, so requesting on an explicit save is the best shot.
+  navigator.storage?.persist?.().then(updateStorageNote).catch(() => {});
 });
+
+function exportAllDesigns() {
+  const designs = savedDesigns();
+  if (!Object.keys(designs).length) { toast('Nothing to export yet'); return; }
+  downloadFile('perler-designs-backup.json',
+    JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), designs }, null, 1),
+    'application/json');
+  toast('Backup downloaded');
+}
+
+function importDesigns(obj) {
+  const incoming = obj && obj.designs;
+  if (!incoming || typeof incoming !== 'object') { toast('Not a designs backup file'); return; }
+  const cur = savedDesigns();
+  let added = 0, updated = 0, skipped = 0;
+  for (const [name, d] of Object.entries(incoming)) {
+    if (!d || !d.pattern || !d.pattern.board || !Array.isArray(d.pattern.beads)) { skipped++; continue; }
+    const existing = cur[name];
+    if (!existing) { cur[name] = d; added++; }
+    else if ((d.savedAt || '') > (existing.savedAt || '')) { cur[name] = d; updated++; }
+  }
+  if (!lsWrite(STORE_KEY, cur)) { toast('Could not import — browser storage unavailable'); return; }
+  renderSavedList();
+  toast(`Imported ${added} design${added === 1 ? '' : 's'}` +
+    (updated ? `, updated ${updated}` : '') + (skipped ? `, skipped ${skipped} invalid` : ''));
+}
+
+document.getElementById('btnExportAll').addEventListener('click', exportAllDesigns);
+document.getElementById('btnImportAll').addEventListener('click', () => document.getElementById('importFile').click());
+document.getElementById('importFile').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  file.text().then(t => {
+    try { importDesigns(JSON.parse(t)); }
+    catch { toast('Invalid JSON file'); }
+    e.target.value = '';
+  });
+});
+
+async function updateStorageNote() {
+  const el = document.getElementById('storageNote');
+  let persisted = false;
+  try { persisted = (await navigator.storage?.persisted?.()) || false; } catch { /* note stays cautious */ }
+  el.textContent = persisted
+    ? 'Storage is protected on this device. Private Browsing still discards saves — export backups you care about.'
+    : 'Saves live in this browser only, and Private Browsing discards them when closed. Export backups you care about.';
+}
 
 /* ---------------- Counts ---------------- */
 function updateCounts() {
@@ -1070,6 +1127,7 @@ if (!restoredOk) {
   renderFills();
 }
 renderSavedList();
+updateStorageNote();
 syncJSON();
 updateCounts();
 updateBuildStatus();
