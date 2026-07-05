@@ -15,7 +15,8 @@ open index.html
 
 It loads with a demo pattern (inspired by a real circular-board mandala) so you can see
 the renderer working immediately. The **Example** dropdown in the sidebar loads any of
-the bundled patterns from `examples/`.
+the bundled patterns from `examples/`. The ☾ button next to the title toggles dark
+mode; it follows the system preference by default and remembers an explicit choice.
 
 > Because the app runs over `file://`, it can't fetch `examples/*.json` at runtime —
 > the examples are embedded into `index.html` at build time. After adding or editing an

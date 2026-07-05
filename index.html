@@ -14,8 +14,26 @@
     --ink: #2b2a27;
     --muted: #7a766e;
     --line: #e0dcd2;
+    --line-strong: #c8c3b6;
     --accent: #d97706;
-    --plate: #f8f6f0;
+    --btn: #faf8f4;
+    --btn-hover: #ffffff;
+    --field: #fbfaf7;
+    --peg-hover: #6b665c;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #171614;
+    --panel: #201e1b;
+    --ink: #e9e6df;
+    --muted: #9b968b;
+    --line: #37342e;
+    --line-strong: #4a463e;
+    --btn: #2a2723;
+    --btn-hover: #322f29;
+    --field: #1b1a17;
+    --peg-hover: #b5b0a5;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
@@ -42,18 +60,19 @@
   }
   button {
     font: inherit; font-size: 13px;
-    background: #faf8f4; color: var(--ink);
+    background: var(--btn); color: var(--ink);
     border: 1px solid var(--line); border-radius: 6px;
     padding: 5px 10px; cursor: pointer;
   }
-  button:hover { border-color: #c8c3b6; background: #fff; }
-  button.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+  button:hover { border-color: var(--line-strong); background: var(--btn-hover); }
+  button.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   label { font-size: 13px; }
   select, input[type=number], input[type=text] {
     font: inherit; font-size: 13px; padding: 4px 6px;
-    border: 1px solid var(--line); border-radius: 6px; background: #fff;
+    border: 1px solid var(--line); border-radius: 6px;
+    background: var(--field); color: var(--ink);
   }
   input[type=number] { width: 62px; }
   #palette {
@@ -82,7 +101,7 @@
   }
   #board { width: 100%; height: 100%; max-width: 860px; touch-action: none; }
   #board [data-key] { cursor: crosshair; }
-  #board [data-key]:hover .outer { stroke: #6b665c; stroke-width: .8; }
+  #board [data-key]:hover .outer { stroke: var(--peg-hover); stroke-width: .8; }
   #jsonPanel {
     border-top: 1px solid var(--line); background: var(--panel);
     padding: 10px 14px; display: flex; flex-direction: column; gap: 8px;
@@ -91,7 +110,7 @@
     width: 100%; height: 110px; resize: vertical;
     font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
     border: 1px solid var(--line); border-radius: 6px; padding: 8px;
-    background: #fbfaf7; color: var(--ink);
+    background: var(--field); color: var(--ink);
   }
   #saveName { flex: 1; min-width: 0; }
   #savedList { margin-top: 8px; }
@@ -105,7 +124,7 @@
   .note { font-size: 11.5px; color: var(--muted); margin-top: 10px; }
   #toast {
     position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
-    background: var(--ink); color: #fff; padding: 8px 16px; border-radius: 8px;
+    background: var(--ink); color: var(--bg); padding: 8px 16px; border-radius: 8px;
     font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .25s;
   }
   #toast.show { opacity: 1; }
@@ -130,7 +149,10 @@
 <body>
 
 <aside>
-  <h1>Perler Pattern Studio</h1>
+  <div class="row" style="justify-content:space-between; align-items:flex-start">
+    <h1>Perler Pattern Studio</h1>
+    <button id="btnTheme" title="Toggle dark mode">☾</button>
+  </div>
   <div class="sub">Deterministic bead patterns from structured data</div>
 
   <section>
@@ -290,7 +312,20 @@ function colorInfo(c) {
 
 /* ---------------- State ---------------- */
 const PITCH = 10, BEAD_R = 4.7, HOLE_R = 1.9, DOT_R = 1.25;
-const PLATE_BG = '#f8f6f0';
+const THEMES = {
+  light: {
+    plate: '#f8f6f0', plateLine: '#ddd8ce',
+    pegLine: '#eae6dc', pegDot: '#c6c1b5',
+    beadStroke: 'rgba(0,0,0,.28)', exportBg: '#f2efe9',
+  },
+  dark: {
+    plate: '#26231e', plateLine: '#3a372f',
+    pegLine: '#33302a', pegDot: '#544f47',
+    beadStroke: 'rgba(0,0,0,.45)', exportBg: '#171614',
+  },
+};
+let theme = 'light';
+const T = () => THEMES[theme];
 
 let board = defaultBoard();
 let beads = new Map();          // key -> color id
@@ -337,8 +372,8 @@ function buildBoard() {
     ex = ey = (board.rings.length - 1) * PITCH + 9;
     const plate = document.createElementNS(NS, 'circle');
     plate.setAttribute('r', ex - 2);
-    plate.setAttribute('fill', PLATE_BG);
-    plate.setAttribute('stroke', '#ddd8ce');
+    plate.setAttribute('fill', T().plate);
+    plate.setAttribute('stroke', T().plateLine);
     svg.appendChild(plate);
   } else {
     ex = (board.width - 1) / 2 * PITCH + 9;
@@ -347,8 +382,8 @@ function buildBoard() {
     plate.setAttribute('x', -ex + 2); plate.setAttribute('y', -ey + 2);
     plate.setAttribute('width', 2 * ex - 4); plate.setAttribute('height', 2 * ey - 4);
     plate.setAttribute('rx', 6);
-    plate.setAttribute('fill', PLATE_BG);
-    plate.setAttribute('stroke', '#ddd8ce');
+    plate.setAttribute('fill', T().plate);
+    plate.setAttribute('stroke', T().plateLine);
     svg.appendChild(plate);
   }
   svg.setAttribute('viewBox', `${-ex} ${-ey} ${2 * ex} ${2 * ey}`);
@@ -380,17 +415,17 @@ function refreshPeg(key) {
   const info = c && colorInfo(c);
   if (info) {
     el.outer.setAttribute('fill', info.hex);
-    el.outer.setAttribute('stroke', 'rgba(0,0,0,.28)');
+    el.outer.setAttribute('stroke', T().beadStroke);
     el.outer.setAttribute('stroke-width', '.6');
-    el.hole.setAttribute('fill', PLATE_BG);
+    el.hole.setAttribute('fill', T().plate);
     el.dot.setAttribute('fill', 'none');
   } else {
     // transparent (not "none") keeps the whole circle clickable when empty
     el.outer.setAttribute('fill', 'transparent');
-    el.outer.setAttribute('stroke', '#eae6dc');
+    el.outer.setAttribute('stroke', T().pegLine);
     el.outer.setAttribute('stroke-width', '.5');
     el.hole.setAttribute('fill', 'none');
-    el.dot.setAttribute('fill', '#c6c1b5');
+    el.dot.setAttribute('fill', T().pegDot);
   }
 }
 function renderFills() { for (const key of pegEls.keys()) refreshPeg(key); }
@@ -731,7 +766,7 @@ function svgMarkup() {
   const bg = document.createElementNS(NS, 'rect');
   bg.setAttribute('x', vb[0]); bg.setAttribute('y', vb[1]);
   bg.setAttribute('width', vb[2]); bg.setAttribute('height', vb[3]);
-  bg.setAttribute('fill', '#f2efe9');
+  bg.setAttribute('fill', T().exportBg);
   clone.insertBefore(bg, clone.firstChild);
   return new XMLSerializer().serializeToString(clone);
 }
@@ -864,6 +899,20 @@ document.getElementById('btnRebuild').addEventListener('click', () => {
   scheduleSync();
 });
 
+/* ---------------- Theme ---------------- */
+const THEME_KEY = 'perler-studio:theme';
+
+function applyTheme() {
+  document.documentElement.dataset.theme = theme;
+  document.getElementById('btnTheme').textContent = theme === 'dark' ? '☀' : '☾';
+  if (pegEls.size) buildBoard(); // repaint plate + pegs with theme colors
+}
+document.getElementById('btnTheme').addEventListener('click', () => {
+  theme = theme === 'dark' ? 'light' : 'dark';
+  lsWrite(THEME_KEY, theme);
+  applyTheme();
+});
+
 document.getElementById('btnLoadJson').addEventListener('click', () => loadFromJSON(jsonBox.value));
 document.getElementById('btnCopyJson').addEventListener('click', () => copyText(JSON.stringify(currentJSON()), 'Pattern JSON copied'));
 document.getElementById('btnDlJson').addEventListener('click', () => downloadFile('pattern.json', JSON.stringify(currentJSON(), null, 2), 'application/json'));
@@ -871,6 +920,11 @@ document.getElementById('btnDlSvg').addEventListener('click', () => downloadFile
 document.getElementById('btnPrompt').addEventListener('click', () => copyText(buildPrompt(), 'LLM prompt copied — paste it into any chatbot'));
 
 /* ---------------- Init ---------------- */
+const storedTheme = lsRead(THEME_KEY);
+theme = storedTheme === 'dark' || storedTheme === 'light'
+  ? storedTheme
+  : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+applyTheme();
 buildPalette();
 buildSymOptions();
 let restoredOk = false;
