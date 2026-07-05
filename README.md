@@ -80,6 +80,16 @@ meet the shoulder arcs — and the generated LLM prompt instructs models to do t
 The same symmetry tools work for hand-painting: set Fold/Mirror in the sidebar and
 every peg you paint places all its symmetric copies.
 
+## Saved designs & autosave
+
+The **Saved designs** panel stores named designs in the browser's `localStorage`, and
+the working board autosaves on every change and restores on the next visit — close the
+tab mid-design and nothing is lost.
+
+Storage is per-browser, per-device: designs saved on the iPad won't appear on a laptop,
+and clearing the browser's site data deletes them. For backups or moving a design
+between devices, use **Download JSON** (and load it back with the JSON panel).
+
 ## Pattern JSON schema
 
 ```json
