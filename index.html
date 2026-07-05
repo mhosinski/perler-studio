@@ -273,7 +273,7 @@
 'use strict';
 
 /* ---------------- Palette (approximate Perler catalog colors) ---------------- */
-const PALETTE = [
+const SOLID_COLORS = [
   ['white', 'White', '#fdfdfc'],
   ['cream', 'Cream', '#ede8c8'],
   ['yellow', 'Yellow', '#fcd905'],
@@ -320,21 +320,57 @@ const PALETTE = [
   ['dark-gray', 'Dark Gray', '#53575d'],
   ['black', 'Black', '#2b2b2b'],
   ['gold', 'Gold', '#bb9241'],
-].map(([id, name, hex]) => ({ id, name, hex }));
+];
+
+// Two-tone striped beads (pinwheel-segmented). Pattern JSON still stores a
+// single color id; only rendering knows an entry has two colors.
+const STRIPED_COLORS = [
+  ['striped-yellow-green', 'Striped Yellow/Green', '#f5df2e', '#a8cf45'],
+  ['striped-orange-red', 'Striped Orange/Red', '#f9941d', '#e8492b'],
+  ['striped-pink', 'Striped Pink', '#ee5fa4', '#f7c6d8'],
+  ['striped-purple', 'Striped Purple', '#a88fd6', '#e7e2f2'],
+];
+
+const PALETTE = [
+  ...SOLID_COLORS.map(([id, name, hex]) => ({ id, name, hex, colors: [hex] })),
+  ...STRIPED_COLORS.map(([id, name, a, b]) => ({ id, name, hex: a, colors: [a, b] })),
+];
 
 const PAL = Object.fromEntries(PALETTE.map(p => [p.id, p]));
+
+// CSS background for swatches: solid color, or a conic pinwheel for stripes.
+function cssForColor(info) {
+  if (!info.colors || info.colors.length < 2) return info.hex;
+  const [a, b] = info.colors;
+  const stops = [];
+  for (let k = 0; k < 8; k++) stops.push(`${k % 2 ? b : a} ${k * 45}deg ${(k + 1) * 45}deg`);
+  return `conic-gradient(${stops.join(', ')})`;
+}
 
 /* Built-in example patterns. Regenerate from examples/*.json with:
    node tools/embed-examples.js */
 const EXAMPLES = /* EXAMPLES:BEGIN */{"snowflake":{"version":1,"board":{"type":"polar","name":"circle-14","rings":[1,6,12,18,24,30,36,42,48,54,60,66,72,78]},"symmetry":{"fold":6,"mirror":true},"beads":[{"ring":0,"index":0,"color":"white"},{"ring":1,"index":0,"color":"light-blue"},{"ring":2,"index":0,"color":"light-blue"},{"ring":3,"index":0,"color":"white"},{"ring":4,"index":0,"color":"light-blue"},{"ring":5,"index":0,"color":"light-blue"},{"ring":6,"index":0,"color":"white"},{"ring":6,"index":1,"color":"light-blue"},{"ring":7,"index":0,"color":"white"},{"ring":7,"index":1,"color":"light-blue"},{"ring":8,"index":0,"color":"white"},{"ring":8,"index":1,"color":"pastel-blue"},{"ring":9,"index":0,"color":"light-blue"},{"ring":9,"index":1,"color":"white"},{"ring":10,"index":0,"color":"light-blue"},{"ring":10,"index":1,"color":"pastel-blue"},{"ring":11,"index":0,"color":"white"}]}}/* EXAMPLES:END */;
 function colorInfo(c) {
   if (PAL[c]) return PAL[c];
-  if (/^#[0-9a-f]{6}$/i.test(c)) return { id: c, name: c, hex: c };
+  if (/^#[0-9a-f]{6}$/i.test(c)) return { id: c, name: c, hex: c, colors: [c] };
   return null;
 }
 
 /* ---------------- State ---------------- */
 const PITCH = 10, BEAD_R = 4.7, HOLE_R = 1.9, DOT_R = 1.25;
+
+// Four 45-degree wedges (an 8-segment pinwheel's second color), centered on
+// the origin; each peg positions its copy via translate + a per-peg rotation.
+const STRIPE_D = (() => {
+  const R = BEAD_R;
+  let d = '';
+  for (let k = 0; k < 4; k++) {
+    const a1 = k * 90 * Math.PI / 180, a2 = (k * 90 + 45) * Math.PI / 180;
+    d += `M0 0 L${(R * Math.cos(a1)).toFixed(3)} ${(R * Math.sin(a1)).toFixed(3)}` +
+      `A${R} ${R} 0 0 1 ${(R * Math.cos(a2)).toFixed(3)} ${(R * Math.sin(a2)).toFixed(3)}Z`;
+  }
+  return d;
+})();
 const THEMES = {
   light: {
     plate: '#f8f6f0', plateLine: '#ddd8ce',
@@ -417,15 +453,21 @@ function buildBoard() {
     outer.setAttribute('cx', p.x); outer.setAttribute('cy', p.y);
     outer.setAttribute('r', BEAD_R);
     outer.setAttribute('class', 'outer');
+    const stripes = document.createElementNS(NS, 'path');
+    stripes.setAttribute('d', STRIPE_D);
+    // deterministic per-peg rotation so striped beads land organically
+    const [ka, kb] = p.key.split(',').map(Number);
+    stripes.setAttribute('transform', `translate(${p.x} ${p.y}) rotate(${(ka * 37 + kb * 61) % 90})`);
+    stripes.setAttribute('display', 'none');
     const hole = document.createElementNS(NS, 'circle');
     hole.setAttribute('cx', p.x); hole.setAttribute('cy', p.y);
     hole.setAttribute('r', HOLE_R);
     const dot = document.createElementNS(NS, 'circle');
     dot.setAttribute('cx', p.x); dot.setAttribute('cy', p.y);
     dot.setAttribute('r', DOT_R);
-    g.append(outer, hole, dot);
+    g.append(outer, stripes, hole, dot);
     svg.appendChild(g);
-    pegEls.set(p.key, { g, outer, hole, dot });
+    pegEls.set(p.key, { g, outer, stripes, hole, dot });
   }
   renderFills();
 }
@@ -436,9 +478,16 @@ function refreshPeg(key) {
   const c = beads.get(key);
   const info = c && colorInfo(c);
   if (info) {
-    el.outer.setAttribute('fill', info.hex);
+    const striped = info.colors && info.colors.length > 1;
+    el.outer.setAttribute('fill', info.colors ? info.colors[0] : info.hex);
     el.outer.setAttribute('stroke', T().beadStroke);
     el.outer.setAttribute('stroke-width', '.6');
+    if (striped) {
+      el.stripes.setAttribute('fill', info.colors[1]);
+      el.stripes.setAttribute('display', '');
+    } else {
+      el.stripes.setAttribute('display', 'none');
+    }
     el.hole.setAttribute('fill', T().plate);
     el.dot.setAttribute('fill', 'none');
   } else {
@@ -446,6 +495,7 @@ function refreshPeg(key) {
     el.outer.setAttribute('fill', 'transparent');
     el.outer.setAttribute('stroke', T().pegLine);
     el.outer.setAttribute('stroke-width', '.5');
+    el.stripes.setAttribute('display', 'none');
     el.hole.setAttribute('fill', 'none');
     el.dot.setAttribute('fill', T().pegDot);
   }
@@ -894,8 +944,9 @@ function updateCounts() {
     const info = colorInfo(c);
     const div = document.createElement('div');
     div.className = 'c-row';
-    div.innerHTML = `<span class="swatch" style="background:${info.hex}"></span>` +
+    div.innerHTML = `<span class="swatch"></span>` +
       `<span>${info.name}</span><span class="n">${n}</span>`;
+    div.querySelector('.swatch').style.background = cssForColor(info);
     el.appendChild(div);
   }
   const tot = document.createElement('div');
@@ -995,7 +1046,7 @@ function demoPattern() {
     const n = R[r];
     b.set(r + ',' + (((i % n) + n) % n), c);
   };
-  for (let i = 0; i < 6; i++) set(1, i, 'hot-coral');
+  for (let i = 0; i < 6; i++) set(1, i, 'striped-orange-red');
   for (let i = 0; i < 12; i++) set(2, i, 'orange');
   for (let r = 3; r <= 7 && r < R.length; r++) {
     const n = R[r] / 6;
@@ -1095,7 +1146,7 @@ function buildPalette() {
   el.innerHTML = '';
   for (const p of PALETTE) {
     const btn = document.createElement('button');
-    btn.style.background = p.hex;
+    btn.style.background = cssForColor(p);
     btn.title = p.name;
     btn.dataset.id = p.id;
     if (p.id === curColor) btn.classList.add('sel');

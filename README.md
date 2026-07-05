@@ -38,7 +38,8 @@ bead assignments (JSON) ─┘        (zero AI in this step)
    - `square` — classic square pegboards (the standard interlocking Perler plate
      is 29×29).
 2. **Patterns are peg→color assignments**, using colors from an embedded catalog of
-   ~46 named Perler colors (screen hexes are approximations).
+   ~50 named Perler colors, including four two-tone striped beads rendered as
+   pinwheel segments (screen hexes are approximations).
 3. **The renderer** converts `(ring, index)` to `(x, y)` with basic trig and draws
    donut-shaped beads as SVG. What you see is exactly what you build.
 
