@@ -143,3 +143,7 @@ buildability) → `preview` (aesthetics) → embed.
 - More board shapes (hexagon, heart, star plates) — each is just a new template.
 - Printable build sheet: ring-by-ring bead list for following along while placing.
 - PNG export.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
