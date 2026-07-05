@@ -122,9 +122,10 @@
     border: 1px solid var(--line); border-radius: 6px; padding: 8px;
     background: var(--field); color: var(--ink);
   }
-  #saveName { flex: 1; min-width: 0; }
-  #savedList { margin-top: 8px; }
+  #designName { width: 100%; font-weight: 600; }
+  #savedList { margin-top: 8px; max-height: 220px; overflow-y: auto; }
   .s-row { display: flex; gap: 6px; align-items: center; padding: 2px 0; }
+  .s-row.active .s-load { border-color: var(--accent); font-weight: 600; }
   .s-row .s-load {
     flex: 1; text-align: left;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -166,6 +167,15 @@
   <div class="sub">Deterministic bead patterns from structured data</div>
 
   <section>
+    <h2>Design</h2>
+    <input type="text" id="designName" maxlength="40" placeholder="Untitled">
+    <div class="row" style="margin-top:6px">
+      <button id="btnNew" class="primary">＋ New</button>
+      <button id="btnDuplicate">⧉ Duplicate</button>
+    </div>
+  </section>
+
+  <section>
     <h2>Tools</h2>
     <div class="row">
       <button id="toolPaint" class="active">🖌 Paint</button>
@@ -175,7 +185,6 @@
     </div>
     <div class="row" style="margin-top:6px">
       <button id="btnClear">Clear board</button>
-      <button id="btnDemo">Load demo</button>
     </div>
     <div class="row" style="margin-top:6px">
       <label>Example <select id="exampleSel"><option value="">Choose…</option></select></label>
@@ -183,11 +192,7 @@
   </section>
 
   <section>
-    <h2>Saved designs</h2>
-    <div class="row">
-      <input type="text" id="saveName" placeholder="Design name" maxlength="40">
-      <button id="btnSave" class="primary">Save</button>
-    </div>
+    <h2 id="designsHeading">Designs</h2>
     <div id="savedList"></div>
     <div class="row" style="margin-top:8px">
       <button id="btnExportAll">⬇ Export all</button>
@@ -581,7 +586,7 @@ function scheduleSync() {
     syncJSON();
     updateCounts();
     updateBuildStatus();
-    lsWrite(CURRENT_KEY, currentJSON()); // autosave the working board
+    persistActive(); // gallery model: the active design is saved continuously
   }, 120);
 }
 function syncJSON() {
@@ -590,21 +595,20 @@ function syncJSON() {
 
 function loadFromJSON(text, quiet = false) {
   let j;
-  try { j = JSON.parse(text); } catch (err) { toast('Invalid JSON: ' + err.message); return; }
-  if (!j || !j.board || !Array.isArray(j.beads)) { toast('Expected { board, beads } object'); return; }
-  const prev = stateNow();
+  try { j = JSON.parse(text); } catch (err) { toast('Invalid JSON: ' + err.message); return false; }
+  if (!j || !j.board || !Array.isArray(j.beads)) { toast('Expected { board, beads } object'); return false; }
   const nb = j.board;
   if (nb.type === 'polar') {
     if (!Array.isArray(nb.rings) || !nb.rings.every(n => Number.isInteger(n) && n > 0)) {
-      toast('board.rings must be an array of positive integers'); return;
+      toast('board.rings must be an array of positive integers'); return false;
     }
     board = { type: 'polar', name: nb.name || 'circle', rings: nb.rings };
   } else if (nb.type === 'square') {
     if (!Number.isInteger(nb.width) || !Number.isInteger(nb.height) || nb.width < 1 || nb.height < 1) {
-      toast('board.width/height must be positive integers'); return;
+      toast('board.width/height must be positive integers'); return false;
     }
     board = { type: 'square', name: nb.name || 'square', width: nb.width, height: nb.height };
-  } else { toast('board.type must be "polar" or "square"'); return; }
+  } else { toast('board.type must be "polar" or "square"'); return false; }
 
   beads = new Map();
   const s = j.symmetry && Number.isInteger(j.symmetry.fold)
@@ -630,13 +634,19 @@ function loadFromJSON(text, quiet = false) {
   buildSymOptions();
   buildBoard();
   scheduleSync();
-  commitUndo(prev);
   if (!quiet) toast('Pattern loaded' + (skipped ? ` (${skipped} invalid beads skipped)` : ''));
+  return true;
 }
 
-/* ---------------- Saved designs (localStorage) ---------------- */
-const STORE_KEY = 'perler-studio:designs';
-const CURRENT_KEY = 'perler-studio:current';
+/* ---------------- Design library (localStorage, gallery model) ---------------- */
+// v2 store: id-keyed entries { id, name, pattern, createdAt, updatedAt }.
+// The active design is saved continuously; there is no unsaved state.
+const STORE_KEY = 'perler-studio:designs2';
+const ACTIVE_KEY = 'perler-studio:active';
+const LEGACY_STORE_KEY = 'perler-studio:designs';
+const LEGACY_CURRENT_KEY = 'perler-studio:current';
+
+let activeId = null;
 
 function lsRead(key) {
   try {
@@ -651,83 +661,200 @@ function lsWrite(key, value) {
   } catch { return false; }
 }
 
-function savedDesigns() { return lsRead(STORE_KEY) || {}; }
+const nowISO = () => new Date().toISOString();
+const genId = () => 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+function readStore() { return lsRead(STORE_KEY) || {}; }
+function writeStore(s) {
+  if (!lsWrite(STORE_KEY, s)) toast('Could not save — browser storage is unavailable');
+}
+
+// One-time migration from the v1 name-keyed store. Legacy keys are left in
+// place as a safety net for rollbacks.
+function migrateV1() {
+  if (lsRead(STORE_KEY)) return;
+  const old = lsRead(LEGACY_STORE_KEY);
+  const cur = lsRead(LEGACY_CURRENT_KEY);
+  const store = {};
+  if (old) {
+    for (const [name, d] of Object.entries(old)) {
+      if (!d || !d.pattern) continue;
+      const id = genId();
+      store[id] = { id, name, pattern: d.pattern, createdAt: d.savedAt || null, updatedAt: d.savedAt || null };
+    }
+  }
+  let active = null;
+  if (cur && cur.board) {
+    const curStr = JSON.stringify(cur);
+    const match = Object.values(store).find(e => JSON.stringify(e.pattern) === curStr);
+    if (match) active = match.id;
+    else {
+      const id = genId();
+      store[id] = { id, name: 'Untitled', pattern: cur, createdAt: null, updatedAt: null };
+      active = id;
+    }
+  }
+  if (Object.keys(store).length) lsWrite(STORE_KEY, store);
+  if (active) lsWrite(ACTIVE_KEY, active);
+}
+
+function uniqueName(base) {
+  const names = new Set(Object.values(readStore()).map(e => e.name));
+  if (!names.has(base)) return base;
+  let n = 2;
+  while (names.has(`${base} ${n}`)) n++;
+  return `${base} ${n}`;
+}
+
+// Continuous save of the active design (called on the sync debounce).
+// Read-modify-write so a second open tab can't be wholesale clobbered.
+function persistActive() {
+  if (!activeId) return;
+  const s = readStore();
+  const e = s[activeId];
+  if (!e) return;
+  e.pattern = currentJSON();
+  e.updatedAt = nowISO();
+  writeStore(s);
+  renderSavedList();
+}
+
+function switchTo(id, quiet = false) {
+  const e = readStore()[id];
+  if (!e) return false;
+  if (!loadFromJSON(JSON.stringify(e.pattern), true)) return false;
+  activeId = id;
+  lsWrite(ACTIVE_KEY, id);
+  // Undo history must not bleed across designs: with continuous save, undoing
+  // into another design's state would silently overwrite this entry.
+  undoStack.length = 0;
+  redoStack.length = 0;
+  document.getElementById('designName').value = e.name;
+  renderSavedList();
+  if (!quiet) toast(`Opened "${e.name}"`);
+  return true;
+}
+
+function createDesign(name, pattern, quiet = false) {
+  const id = genId();
+  const now = nowISO();
+  const s = readStore();
+  s[id] = { id, name, pattern, createdAt: now, updatedAt: now };
+  writeStore(s);
+  switchTo(id, true);
+  if (!quiet) toast(`Created "${name}"`);
+}
+
+function deleteDesign(id) {
+  const s = readStore();
+  const e = s[id];
+  if (!e) return;
+  if (!confirm(`Delete "${e.name}"?`)) return;
+  delete s[id];
+  writeStore(s);
+  if (id === activeId) {
+    activeId = null;
+    const rest = Object.values(s).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    if (rest.length) switchTo(rest[0].id, true);
+    else createDesign('Untitled', { version: 1, board: currentJSON().board, beads: [] }, true);
+  }
+  renderSavedList();
+}
 
 function renderSavedList() {
   const list = document.getElementById('savedList');
-  const designs = savedDesigns();
-  const names = Object.keys(designs)
-    .sort((a, b) => (designs[b].savedAt || '').localeCompare(designs[a].savedAt || ''));
+  const entries = Object.values(readStore())
+    .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  document.getElementById('designsHeading').textContent =
+    entries.length ? `Designs (${entries.length})` : 'Designs';
   list.innerHTML = '';
-  if (!names.length) {
-    list.innerHTML = '<div class="note" style="margin-top:2px">Nothing saved yet.</div>';
+  if (!entries.length) {
+    list.innerHTML = '<div class="note" style="margin-top:2px">No designs yet.</div>';
     return;
   }
-  for (const name of names) {
+  for (const e of entries) {
     const row = document.createElement('div');
-    row.className = 's-row';
+    row.className = 's-row' + (e.id === activeId ? ' active' : '');
     const load = document.createElement('button');
     load.className = 's-load';
-    load.textContent = name;
-    const d = designs[name];
-    load.title = `${d.pattern.beads.length} beads — saved ${new Date(d.savedAt).toLocaleString()}`;
-    load.addEventListener('click', () => {
-      loadFromJSON(JSON.stringify(d.pattern));
-      document.getElementById('saveName').value = name;
-    });
+    load.textContent = e.name;
+    load.title = `${e.pattern.beads.length} beads — updated ${e.updatedAt ? new Date(e.updatedAt).toLocaleString() : 'never'}`;
+    load.addEventListener('click', () => { if (e.id !== activeId) switchTo(e.id); });
     const del = document.createElement('button');
     del.textContent = '×';
-    del.title = `Delete "${name}"`;
-    del.addEventListener('click', () => {
-      if (!confirm(`Delete "${name}"?`)) return;
-      const cur = savedDesigns();
-      delete cur[name];
-      lsWrite(STORE_KEY, cur);
-      renderSavedList();
-    });
+    del.title = `Delete "${e.name}"`;
+    del.addEventListener('click', () => deleteDesign(e.id));
     row.append(load, del);
     list.appendChild(row);
   }
 }
 
-document.getElementById('btnSave').addEventListener('click', () => {
-  const name = document.getElementById('saveName').value.trim();
-  if (!name) { toast('Name the design first'); return; }
-  const designs = savedDesigns();
-  const existed = !!designs[name];
-  designs[name] = { pattern: currentJSON(), savedAt: new Date().toISOString() };
-  if (!lsWrite(STORE_KEY, designs)) {
-    toast('Could not save — browser storage is unavailable');
-    return;
-  }
-  renderSavedList();
-  toast(existed ? `Updated "${name}"` : `Saved "${name}"`);
-  // Ask the browser to protect this origin's storage from eviction. Safari
-  // weighs user interaction, so requesting on an explicit save is the best shot.
-  navigator.storage?.persist?.().then(updateStorageNote).catch(() => {});
+document.getElementById('btnNew').addEventListener('click', () => {
+  createDesign(uniqueName('Untitled'), { version: 1, board: currentJSON().board, beads: [] });
+});
+document.getElementById('btnDuplicate').addEventListener('click', () => {
+  const e = readStore()[activeId];
+  if (!e) return;
+  createDesign(uniqueName(`${e.name} copy`), currentJSON());
 });
 
+let renameTimer = null;
+document.getElementById('designName').addEventListener('input', () => {
+  clearTimeout(renameTimer);
+  renameTimer = setTimeout(() => {
+    if (!activeId) return;
+    const s = readStore();
+    const e = s[activeId];
+    if (!e) return;
+    e.name = document.getElementById('designName').value.trim() || 'Untitled';
+    e.updatedAt = nowISO();
+    writeStore(s);
+    renderSavedList();
+  }, 400);
+});
+
+// Ask the browser to protect this origin's storage from eviction. Safari
+// weighs user interaction, so request on the first real gesture.
+window.addEventListener('pointerdown', () => {
+  navigator.storage?.persist?.().then(updateStorageNote).catch(() => {});
+}, { once: true });
+
 function exportAllDesigns() {
-  const designs = savedDesigns();
-  if (!Object.keys(designs).length) { toast('Nothing to export yet'); return; }
+  const entries = Object.values(readStore());
+  if (!entries.length) { toast('Nothing to export yet'); return; }
   downloadFile('perler-designs-backup.json',
-    JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), designs }, null, 1),
+    JSON.stringify({ version: 2, exportedAt: nowISO(), designs: entries }, null, 1),
     'application/json');
   toast('Backup downloaded');
 }
 
 function importDesigns(obj) {
-  const incoming = obj && obj.designs;
-  if (!incoming || typeof incoming !== 'object') { toast('Not a designs backup file'); return; }
-  const cur = savedDesigns();
+  if (!obj || !obj.designs) { toast('Not a designs backup file'); return; }
+  // v2 backups carry an entry array; v1 backups a name-keyed object.
+  const entries = Array.isArray(obj.designs)
+    ? obj.designs
+    : Object.entries(obj.designs).map(([name, d]) => ({
+        id: null, name, pattern: d && d.pattern,
+        createdAt: (d && d.savedAt) || null, updatedAt: (d && d.savedAt) || null,
+      }));
+  const s = readStore();
   let added = 0, updated = 0, skipped = 0;
-  for (const [name, d] of Object.entries(incoming)) {
-    if (!d || !d.pattern || !d.pattern.board || !Array.isArray(d.pattern.beads)) { skipped++; continue; }
-    const existing = cur[name];
-    if (!existing) { cur[name] = d; added++; }
-    else if ((d.savedAt || '') > (existing.savedAt || '')) { cur[name] = d; updated++; }
+  for (const e of entries) {
+    if (!e || !e.pattern || !e.pattern.board || !Array.isArray(e.pattern.beads)) { skipped++; continue; }
+    if (e.id && s[e.id]) {
+      if ((e.updatedAt || '') > (s[e.id].updatedAt || '')) { s[e.id] = { ...s[e.id], ...e }; updated++; }
+      continue;
+    }
+    const str = JSON.stringify(e.pattern);
+    if (Object.values(s).some(x => x.name === e.name && JSON.stringify(x.pattern) === str)) continue;
+    const id = e.id || genId();
+    s[id] = {
+      id, name: e.name || 'Imported', pattern: e.pattern,
+      createdAt: e.createdAt || nowISO(), updatedAt: e.updatedAt || nowISO(),
+    };
+    added++;
   }
-  if (!lsWrite(STORE_KEY, cur)) { toast('Could not import — browser storage unavailable'); return; }
+  writeStore(s);
   renderSavedList();
   toast(`Imported ${added} design${added === 1 ? '' : 's'}` +
     (updated ? `, updated ${updated}` : '') + (skipped ? `, skipped ${skipped} invalid` : ''));
@@ -1001,34 +1128,38 @@ document.getElementById('btnClear').addEventListener('click', () => {
   scheduleSync();
   commitUndo(prev);
 });
-(function () {
-  const sel = document.getElementById('exampleSel');
-  const names = Object.keys(EXAMPLES);
-  for (const n of names) {
-    const o = document.createElement('option');
-    o.value = n;
-    o.textContent = n;
-    sel.appendChild(o);
-  }
-  sel.addEventListener('change', () => {
-    if (!sel.value) return;
-    loadFromJSON(JSON.stringify(EXAMPLES[sel.value]));
-    sel.value = '';
-  });
-  if (!names.length) sel.closest('.row').style.display = 'none';
-})();
-
-document.getElementById('btnDemo').addEventListener('click', () => {
-  const prev = stateNow();
+// Loading an example always creates a NEW design — it never replaces the
+// active one (gallery model: loads are additive, edits are per-design).
+function loadDemoAsNewDesign(quiet = false) {
   board = defaultBoard();
   syncBoardControls();
   buildSymOptions();
   buildBoard();
   beads = demoPattern();
   renderFills();
-  scheduleSync();
-  commitUndo(prev);
-});
+  createDesign(uniqueName('Wagon wheel'), currentJSON(), quiet);
+}
+
+(function () {
+  const sel = document.getElementById('exampleSel');
+  for (const n of Object.keys(EXAMPLES)) {
+    const o = document.createElement('option');
+    o.value = n;
+    o.textContent = n;
+    sel.appendChild(o);
+  }
+  const demo = document.createElement('option');
+  demo.value = '__demo';
+  demo.textContent = 'wagon-wheel demo';
+  sel.appendChild(demo);
+  sel.addEventListener('change', () => {
+    const v = sel.value;
+    if (!v) return;
+    sel.value = '';
+    if (v === '__demo') { loadDemoAsNewDesign(); return; }
+    createDesign(uniqueName(v), EXAMPLES[v]);
+  });
+})();
 
 function buildSymOptions() {
   const folds = board.type === 'polar' ? [1, 2, 3, 6, 12] : [1, 2, 4];
@@ -1100,7 +1231,12 @@ document.getElementById('btnTheme').addEventListener('click', () => {
   applyTheme();
 });
 
-document.getElementById('btnLoadJson').addEventListener('click', () => loadFromJSON(jsonBox.value));
+document.getElementById('btnLoadJson').addEventListener('click', () => {
+  let j;
+  try { j = JSON.parse(jsonBox.value); } catch (err) { toast('Invalid JSON: ' + err.message); return; }
+  if (!j || !j.board || !Array.isArray(j.beads)) { toast('Expected { board, beads } object'); return; }
+  createDesign(uniqueName('Imported'), j);
+});
 document.getElementById('btnCopyJson').addEventListener('click', () => copyText(JSON.stringify(currentJSON()), 'Pattern JSON copied'));
 document.getElementById('btnDlJson').addEventListener('click', () => downloadFile('pattern.json', JSON.stringify(currentJSON(), null, 2), 'application/json'));
 document.getElementById('btnDlSvg').addEventListener('click', () => downloadFile('pattern.svg', svgMarkup(), 'image/svg+xml'));
@@ -1114,18 +1250,16 @@ theme = storedTheme === 'dark' || storedTheme === 'light'
 applyTheme();
 buildPalette();
 buildSymOptions();
-let restoredOk = false;
-const restored = lsRead(CURRENT_KEY);
-if (restored && restored.board) {
-  loadFromJSON(JSON.stringify(restored), true); // restore autosaved board quietly
-  restoredOk = pegEls.size > 0;
+migrateV1();
+let opened = false;
+const initialActive = lsRead(ACTIVE_KEY);
+if (initialActive) opened = switchTo(initialActive, true);
+if (!opened) {
+  const entries = Object.values(readStore())
+    .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  if (entries.length) opened = switchTo(entries[0].id, true);
 }
-if (!restoredOk) {
-  syncBoardControls();
-  buildBoard();
-  beads = demoPattern();
-  renderFills();
-}
+if (!opened) loadDemoAsNewDesign(true); // first run: seed the library with the demo
 renderSavedList();
 updateStorageNote();
 syncJSON();

@@ -85,17 +85,27 @@ fuses because ironing spreads beads), a hint suggests ironing those sections eve
 The same symmetry tools work for hand-painting: set Fold/Mirror in the sidebar and
 every peg you paint places all its symmetric copies.
 
-## Saved designs & autosave
+## Designs (gallery model)
 
-The **Saved designs** panel stores named designs in the browser's `localStorage`, and
-the working board autosaves on every change and restores on the next visit — close the
-tab mid-design and nothing is lost.
+The app works like Procreate's gallery: **there is no Save button and no unsaved
+state.** Every board belongs to a named design; edits persist to the browser's
+`localStorage` continuously, and the app reopens to whatever you were working on.
+
+- **Design** panel (top): the active design's name — edit it in place — plus **New**
+  (fresh empty design on the current board) and **Duplicate** (fork the active one).
+- **Designs** list: newest first, active design highlighted; tap to switch (always
+  safe — everything is already saved), × to delete.
+- Loading an example or pasting JSON always **creates a new design** — it never
+  replaces the one you're on.
+- **Clear board** just erases the beads of the current design (undoable, like any
+  edit). It has nothing to do with saving.
+- Undo history is per-session and per-design; switching designs resets it.
 
 Storage is per-browser, per-device: designs saved on the iPad won't appear on a laptop,
 and clearing the browser's site data deletes them. **Private Browsing discards saves
-when the tab closes** — the panel shows a standing reminder. Saving also requests
-`navigator.storage.persist()` so the OS protects the data from storage-pressure
-eviction where supported.
+when the tab closes** — the panel shows a standing reminder. The app also requests
+`navigator.storage.persist()` on first interaction so the OS protects the data from
+storage-pressure eviction where supported.
 
 **Export all** downloads the entire design library as one backup file; **Import**
 merges a backup back in (newer timestamps win, nothing is deleted). Use these for
