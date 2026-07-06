@@ -158,7 +158,8 @@ losing track of it.
 **To park an initiative's tail** (when it's "good enough for now"):
 
 1. `bd update <remaining open descendant ids> --status deferred` — moves the tail
-   out of the active working set. Add a `--reason` noting why/where you stopped.
+   out of the active working set. Add an `--append-notes` noting why/where you
+   stopped (there is no `--reason` flag on `bd update`).
 2. **Keep the epic itself `open` — do NOT close it.** An open epic with done
    children and a deferred tail is the truthful record: substantial work done,
    remainder deliberately on ice. Closing it would read as finished and risk
