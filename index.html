@@ -149,11 +149,15 @@
     font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .25s;
   }
   #toast.show { opacity: 1; }
-  /* Touch devices: bigger targets, comfier palette */
+  /* Touch devices: bigger targets, comfier palette.
+     16px on editable fields is load-bearing: iOS Safari auto-zooms the page
+     when a focused field's font-size is under 16px, and the board's gesture
+     layer (touch-action: none) then blocks pinching back out. */
   @media (pointer: coarse) {
     button { padding: 9px 13px; }
     #palette { gap: 8px; }
-    select, input[type=number], input[type=text] { padding: 7px 8px; }
+    select, input[type=number], input[type=text] { font-size: 16px; padding: 7px 8px; }
+    #jsonPanel textarea { font-size: 16px; }
   }
   /* Narrow screens (iPad portrait, phones): stack panels */
   @media (max-width: 900px) {
