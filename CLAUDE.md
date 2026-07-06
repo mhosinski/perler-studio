@@ -58,6 +58,43 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 <!-- END BEADS INTEGRATION -->
 
 
+## Session Handoff Protocol
+
+The bridge between sessions is a single beads memory with the fixed key
+`handoff-next-session`. Because `bd remember --key` upserts, there is exactly
+one handoff — always current, never a pile of stale ones. Beads issues hold the
+durable backlog (status, priorities, dependencies); the handoff holds the
+ephemeral connective tissue — which bead to pick up next, pending user gates,
+and the decisions/rationale that have no natural home in an issue.
+
+### Session start (mandatory, in order)
+
+1. Run `bd prime` and read the FULL output (workflow reference + all stored memories).
+2. Run `bd recall handoff-next-session` — last session's state and where to resume.
+3. Read `README.md` in full — it is authoritative for user-facing behavior.
+
+### Session end (mandatory — work is NOT complete until all of these are done)
+
+1. File beads for all remaining and follow-up work.
+2. Run quality gates: `node --test` (plus `tools/preview.js` when rendering or
+   startup changed).
+3. Close finished beads; update in-progress ones.
+4. Commit and push (publishing is part of "done" here — pushing main deploys
+   GitHub Pages; verify per the deploy memory). Sync the tracker with
+   `bd dolt push`.
+5. Update the handoff — same key every time:
+
+   ```bash
+   bd remember "handoff-next-session: <date>, <one-phrase session summary>; <repo/build state, e.g. 'tree CLEAN, pushed, live verified'>; <any pending user gate>. WHAT LANDED: <items with bead IDs, key decisions + rationale>. NEXT STEPS in order: <prioritized, with bead IDs>. PROCESS: <workflow lessons hardened this session>." --key handoff-next-session
+   ```
+
+**Content discipline:** the handoff records *state and rationale, not tasks* —
+tasks live in beads. Always include: any pending user gate (e.g. "user was
+about to device-test X; confirm before building on it"), what landed with WHY
+decisions were made (so the next session doesn't re-derive or re-litigate),
+next steps in priority order with bead IDs, and process lessons so workflow
+improvements compound instead of being relearned.
+
 ## Build & Test
 
 There is **no build step and no dependency install** — the app is a single
