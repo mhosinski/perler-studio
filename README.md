@@ -22,8 +22,14 @@ On touch devices, Procreate-style gestures work over the board: **two-finger tap
 undo, three-finger tap = redo, two-finger drag = pan/zoom** (up to 8×, for
 peg-precise painting on small screens; pinch back out to snap to the full board).
 Fingers and pencil paint; there is deliberately no clear-board gesture —
-destructive actions stay behind the explicit button. Phone-width screens get a
-compact layout: the JSON panel shrinks to a peek strip and expands while focused.
+destructive actions stay behind the explicit button. Painting a bead with its
+already-selected color removes it (toggle); the paint/erase decision is made at
+the start of each stroke, so drags never flicker between the two.
+
+Phone-width screens get a board-first layout: a slim top bar (menu, design name,
+undo/redo), the palette as a thumb-reachable strip along the bottom with an
+erase toggle, and everything else — designs, board setup, symmetry, bead counts,
+JSON/export tools — in a slide-out menu behind the ☰ button.
 
 > Because the app runs over `file://`, it can't fetch `examples/*.json` at runtime —
 > the examples are embedded into `index.html` at build time. After adding or editing an

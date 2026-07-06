@@ -156,21 +156,71 @@
     }
     #jsonPanel textarea { height: 70px; }
   }
-  /* Phones: tighter chrome, board gets the space. The JSON box shrinks to a
-     peek strip and expands while focused. */
+  /* Phone chrome: hidden on desktop/tablet */
+  #topbar, #bottomBar, #drawerOverlay { display: none; }
+
+  /* Phones: board-first. Slim top bar (menu / name / undo / redo), palette as
+     a thumb-reachable bottom strip, everything else in a slide-out drawer. */
   @media (max-width: 600px) {
-    aside { max-height: 38vh; padding: 10px 12px; }
-    aside h1 { font-size: 15px; }
-    section { padding: 9px 0; }
-    #savedList { max-height: 120px; }
-    #stage { padding: 8px; }
-    #jsonPanel { padding: 8px 10px; gap: 6px; }
-    #jsonPanel textarea { height: 42px; }
-    #jsonPanel:focus-within textarea { height: 30vh; }
+    body { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
+    #topbar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; padding-top: max(8px, env(safe-area-inset-top));
+      background: var(--panel); border-bottom: 1px solid var(--line);
+    }
+    #topbar button { font-size: 16px; padding: 8px 12px; }
+    #topbar .t-name {
+      flex: 1; text-align: center; font-weight: 600; font-size: 14px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    aside {
+      position: fixed; z-index: 40; top: 0; left: 0; bottom: 0;
+      width: min(320px, 86vw); max-height: none;
+      border-right: 1px solid var(--line); border-bottom: none;
+      transform: translateX(-105%); transition: transform .22s ease;
+      padding-bottom: max(16px, env(safe-area-inset-bottom));
+      overscroll-behavior: contain;
+    }
+    body.drawer-open aside { transform: translateX(0); }
+    #drawerOverlay {
+      display: block; position: fixed; inset: 0; z-index: 30;
+      background: rgba(0,0,0,.45);
+      opacity: 0; pointer-events: none; transition: opacity .22s;
+    }
+    body.drawer-open #drawerOverlay { opacity: 1; pointer-events: auto; }
+    #bottomBar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; padding-bottom: max(8px, env(safe-area-inset-bottom));
+      background: var(--panel); border-top: 1px solid var(--line);
+      min-width: 0;
+    }
+    #bottomBar #btnEraseMobile {
+      flex: none; width: 40px; height: 40px; border-radius: 50%;
+      padding: 0; font-size: 17px;
+    }
+    #paletteSlot { display: contents; }
+    #bottomBar #palette {
+      display: flex; flex: 1; min-width: 0; overflow-x: auto; gap: 7px;
+      padding: 3px 2px; -webkit-overflow-scrolling: touch;
+    }
+    #bottomBar #palette button { width: 40px; height: 40px; flex: none; }
+    #stage { padding: 6px; }
+    /* the JSON panel lives inside the drawer on phones */
+    aside #jsonPanel { border-top: 1px solid var(--line); padding: 12px 0 0; margin-top: 4px; }
+    aside #jsonPanel textarea { height: 90px; }
+    #toast { bottom: calc(72px + env(safe-area-inset-bottom)); }
   }
 </style>
 </head>
 <body>
+
+<!-- Phone chrome (hidden ≥600px): slim top bar; the sidebar becomes a drawer -->
+<header id="topbar">
+  <button id="btnDrawer" title="Menu">☰</button>
+  <span class="t-name" id="topTitle"></span>
+  <button id="topUndo" title="Undo">↩</button>
+  <button id="topRedo" title="Redo">↪</button>
+</header>
 
 <aside>
   <div class="row" style="justify-content:space-between; align-items:flex-start">
@@ -284,6 +334,14 @@
     <textarea id="jsonBox" spellcheck="false"></textarea>
   </div>
 </main>
+
+<!-- Phone bottom bar: the palette strip lives here ≤600px (the #palette node
+     itself moves between homes on breakpoint change — one palette, two homes) -->
+<div id="bottomBar">
+  <button id="btnEraseMobile" title="Erase">⌫</button>
+  <div id="paletteSlot"></div>
+</div>
+<div id="drawerOverlay"></div>
 
 <div id="toast"></div>
 
@@ -898,6 +956,10 @@ svg.addEventListener('pointerdown', e => {
   strokePointer = e.pointerId;
   dragging = true;
   strokeErase = tool === 'erase' || e.button === 2;
+  // Tapping a bead that already has the selected color toggles it off. The
+  // mode is decided once per stroke (at the start peg), pixel-editor style,
+  // so a drag never flickers between painting and erasing mid-stroke.
+  if (!strokeErase && beads.get(t.dataset.key) === curColor) strokeErase = true;
   applyAt(t.dataset.key, strokeErase);
 });
 // Hit-test by coordinates rather than event target: iOS implicitly captures
@@ -1273,6 +1335,8 @@ function renderSavedList() {
   const entries = orderedEntries(readStore());
   document.getElementById('designsHeading').textContent =
     entries.length ? `Designs (${entries.length})` : 'Designs';
+  document.getElementById('topTitle').textContent =
+    document.getElementById('designName').value || 'Perler Studio';
   list.innerHTML = '';
   if (!entries.length) {
     list.innerHTML = '<div class="note" style="margin-top:2px">No designs yet.</div>';
@@ -1639,11 +1703,43 @@ function buildPalette() {
 function setToolButtons() {
   document.getElementById('toolPaint').classList.toggle('active', tool === 'paint');
   document.getElementById('toolErase').classList.toggle('active', tool === 'erase');
+  document.getElementById('btnEraseMobile').classList.toggle('active', tool === 'erase');
 }
 document.getElementById('toolPaint').addEventListener('click', () => { tool = 'paint'; setToolButtons(); });
 document.getElementById('toolErase').addEventListener('click', () => { tool = 'erase'; setToolButtons(); });
 document.getElementById('btnUndo').addEventListener('click', undo);
 document.getElementById('btnRedo').addEventListener('click', redo);
+
+/* ---------------- Phone layout (drawer + bottom palette bar) ---------------- */
+// The palette and JSON panel are single DOM nodes that move between their
+// desktop homes (sidebar section / below the stage) and their phone homes
+// (bottom bar / drawer) when the breakpoint flips.
+const phoneMq = matchMedia('(max-width: 600px)');
+function relayout() {
+  const palette = document.getElementById('palette');
+  const jsonPanel = document.getElementById('jsonPanel');
+  if (phoneMq.matches) {
+    document.getElementById('paletteSlot').appendChild(palette);
+    document.querySelector('aside').appendChild(jsonPanel);
+    palette.querySelector('.sel')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+  } else {
+    document.getElementById('curColor').before(palette);
+    document.querySelector('main').appendChild(jsonPanel);
+    document.body.classList.remove('drawer-open');
+  }
+}
+phoneMq.addEventListener('change', relayout);
+
+document.getElementById('btnDrawer').addEventListener('click', () =>
+  document.body.classList.toggle('drawer-open'));
+document.getElementById('drawerOverlay').addEventListener('click', () =>
+  document.body.classList.remove('drawer-open'));
+document.getElementById('topUndo').addEventListener('click', undo);
+document.getElementById('topRedo').addEventListener('click', redo);
+document.getElementById('btnEraseMobile').addEventListener('click', () => {
+  tool = tool === 'erase' ? 'paint' : 'erase';
+  setToolButtons();
+});
 
 document.getElementById('btnClear').addEventListener('click', () => {
   if (!beads.size) return;
@@ -1805,6 +1901,7 @@ theme = storedTheme === 'dark' || storedTheme === 'light'
 applyTheme();
 buildPalette();
 buildSymOptions();
+relayout();
 migrateV1();
 let opened = false;
 const initialActive = lsRead(ACTIVE_KEY);
