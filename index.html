@@ -1151,7 +1151,7 @@ function applyAt(key, erase) {
   scheduleSync();
 }
 
-let dragging = false, strokeErase = false, strokePrev = null, strokePointer = null;
+let dragging = false, strokeErase = false, strokeBucket = false, strokePrev = null, strokePointer = null;
 svg.addEventListener('pointerdown', e => {
   const t = e.target.closest('[data-key]');
   if (!t) return;
@@ -1160,38 +1160,38 @@ svg.addEventListener('pointerdown', e => {
   // (undo/redo taps), never the start of a paint stroke.
   if (e.pointerType === 'touch' && gestureTouches.size > 0) return;
   e.preventDefault();
-  // Bucket: one tap fills the whole region — no drag, one undo entry. Same
-  // toggle convention as the brush: filling a region that already has the
-  // selected color erases it (and right-click always erases).
-  if (tool === 'bucket') {
-    const key = t.dataset.key;
-    const prev = stateNow();
-    const erase = e.button === 2 || beads.get(key) === curColor;
-    for (const k of PerlerCore.floodFill(board, beads, key)) {
+  strokePrev = stateNow();
+  strokePointer = e.pointerId;
+  dragging = true;
+  strokeBucket = tool === 'bucket';
+  strokeErase = tool === 'erase' || e.button === 2;
+  // Tapping a bead that already has the selected color toggles it off — for
+  // the bucket too (same-color fill erases the region). The mode is decided
+  // once per stroke (at the start peg), pixel-editor style, so a drag never
+  // flickers between painting and erasing mid-stroke.
+  if (!strokeErase && beads.get(t.dataset.key) === curColor) strokeErase = true;
+  if (strokeBucket) {
+    // Bucket: a one-shot stroke. The fill lands now but, like any stroke,
+    // stays uncommitted until pointerup — so a second finger joining (a
+    // two-finger undo tap) can still veto and revert an accidental
+    // first-finger fill instead of leaving it on the undo stack.
+    for (const k of PerlerCore.floodFill(board, beads, t.dataset.key)) {
       for (const s of symCopies(k)) {
-        if (erase) beads.delete(s); else beads.set(s, curColor);
+        if (strokeErase) beads.delete(s); else beads.set(s, curColor);
         refreshPeg(s);
       }
     }
     scheduleSync();
-    commitUndo(prev);
-    return;
+  } else {
+    applyAt(t.dataset.key, strokeErase);
   }
-  strokePrev = stateNow();
-  strokePointer = e.pointerId;
-  dragging = true;
-  strokeErase = tool === 'erase' || e.button === 2;
-  // Tapping a bead that already has the selected color toggles it off. The
-  // mode is decided once per stroke (at the start peg), pixel-editor style,
-  // so a drag never flickers between painting and erasing mid-stroke.
-  if (!strokeErase && beads.get(t.dataset.key) === curColor) strokeErase = true;
-  applyAt(t.dataset.key, strokeErase);
 });
 // Hit-test by coordinates rather than event target: iOS implicitly captures
 // touch/pen pointers on the element where the stroke began, so during a drag
 // the event target never changes as the finger or pencil crosses pegs.
 svg.addEventListener('pointermove', e => {
   if (!dragging || e.pointerId !== strokePointer) return;
+  if (strokeBucket) return; // the fill is one-shot; dragging must not re-fill
   e.preventDefault();
   const el = document.elementFromPoint(e.clientX, e.clientY);
   const t = el && el.closest('[data-key]');
