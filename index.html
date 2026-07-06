@@ -363,11 +363,13 @@ const PerlerCore = (() => {
   // ~1.13 (usually fuse — ironing spreads beads).
   const REACH_LENIENT = 1.15, REACH_STRICT = 1.06;
 
-  // Physical position of a peg, pitch = 1.
+  // Physical position of a peg, pitch = 1, y down. Polar: index 0 at
+  // 12 o'clock, indices clockwise — this MUST match the renderer (which now
+  // derives from here); a convention mismatch rotates every image import.
   function pegXY(board, key) {
     const [a, b] = key.split(',').map(Number);
     if (board.type === 'polar') {
-      const ang = 2 * Math.PI * b / board.rings[a];
+      const ang = Math.PI * (2 * b / board.rings[a] - 0.5);
       return [a * Math.cos(ang), a * Math.sin(ang)];
     }
     return [b, a];
@@ -742,22 +744,23 @@ function ringsFor(n) {
 }
 
 /* ---------------- Geometry & board build ---------------- */
+// Peg positions derive from the shared core (pitch 1, index 0 at 12 o'clock);
+// the renderer only scales by PITCH and centers the square grid. Keeping the
+// trig in ONE place is load-bearing: a convention drift between renderer and
+// core rotates every image import (perler-5gl).
 function pegPositions() {
-  const out = [];
+  const keys = [];
   if (board.type === 'polar') {
-    board.rings.forEach((count, r) => {
-      for (let i = 0; i < count; i++) {
-        const a = (-90 + 360 * i / count) * Math.PI / 180;
-        out.push({ key: r + ',' + i, x: r * PITCH * Math.cos(a), y: r * PITCH * Math.sin(a) });
-      }
-    });
+    board.rings.forEach((count, r) => { for (let i = 0; i < count; i++) keys.push(r + ',' + i); });
   } else {
-    const { width: W, height: H } = board;
-    for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
-      out.push({ key: r + ',' + c, x: (c - (W - 1) / 2) * PITCH, y: (r - (H - 1) / 2) * PITCH });
-    }
+    for (let r = 0; r < board.height; r++) for (let c = 0; c < board.width; c++) keys.push(r + ',' + c);
   }
-  return out;
+  const cx = board.type === 'square' ? (board.width - 1) / 2 : 0;
+  const cy = board.type === 'square' ? (board.height - 1) / 2 : 0;
+  return keys.map(key => {
+    const [x, y] = PerlerCore.pegXY(board, key);
+    return { key, x: (x - cx) * PITCH, y: (y - cy) * PITCH };
+  });
 }
 
 const svg = document.getElementById('board');

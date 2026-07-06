@@ -129,6 +129,16 @@ test('connectivity: components come back largest-first with island keys addressa
   assert.deepEqual(res.lenient[1].map(i => res.keys[i]), ['5,5']);
 });
 
+/* ---------------- pegXY convention ---------------- */
+
+test('pegXY: polar index 0 sits at 12 o\'clock, indices go clockwise (y down)', () => {
+  const [x0, y0] = core.pegXY(POLAR, '3,0');
+  assert.ok(Math.abs(x0) < 1e-9 && y0 < 0, `index 0 must point up, got (${x0}, ${y0})`);
+  // ring 3 has 18 pegs; a quarter turn clockwise (index 4.5 -> use ring 2, 12 pegs, index 3)
+  const [x3, y3] = core.pegXY(POLAR, '2,3');
+  assert.ok(x3 > 0 && Math.abs(y3) < 1e-9, `quarter turn must point right (3 o'clock), got (${x3}, ${y3})`);
+});
+
 /* ---------------- embed drift ---------------- */
 
 test('index.html embeds the current tools/core.js (run node tools/embed-core.js)', () => {

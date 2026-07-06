@@ -84,11 +84,13 @@ const PerlerCore = (() => {
   // ~1.13 (usually fuse — ironing spreads beads).
   const REACH_LENIENT = 1.15, REACH_STRICT = 1.06;
 
-  // Physical position of a peg, pitch = 1.
+  // Physical position of a peg, pitch = 1, y down. Polar: index 0 at
+  // 12 o'clock, indices clockwise — this MUST match the renderer (which now
+  // derives from here); a convention mismatch rotates every image import.
   function pegXY(board, key) {
     const [a, b] = key.split(',').map(Number);
     if (board.type === 'polar') {
-      const ang = 2 * Math.PI * b / board.rings[a];
+      const ang = Math.PI * (2 * b / board.rings[a] - 0.5);
       return [a * Math.cos(ang), a * Math.sin(ang)];
     }
     return [b, a];

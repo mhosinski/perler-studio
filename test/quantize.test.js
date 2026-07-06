@@ -176,6 +176,22 @@ test('core.patternJSON: sorted, versioned, board normalized', () => {
   assert.deepEqual(p.beads.map(b => `${b.row},${b.col}`), ['0,0', '0,2', '2,1']);
 });
 
+test('quantize: polar sampling preserves image orientation (top of image = 12 o\'clock)', () => {
+  // Red band across the top of the image, black band across the bottom.
+  const size = 64;
+  const pixels = Buffer.alloc(size * size * 4);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const i = (y * size + x) * 4;
+    if (y < size / 4) { pixels[i] = 208; pixels[i + 1] = 43; pixels[i + 2] = 46; pixels[i + 3] = 255; }
+    else if (y >= size * 3 / 4) { pixels[i] = 43; pixels[i + 1] = 43; pixels[i + 2] = 43; pixels[i + 3] = 255; }
+  }
+  const p = runQuantize(png.encode(size, size, pixels), ['--board', 'polar:4']);
+  const at = (ring, index) => p.beads.find(b => b.ring === ring && b.index === index)?.color;
+  // Outer ring (3) has 18 pegs: index 0 = 12 o'clock, index 9 = 6 o'clock.
+  assert.equal(at(3, 0), 'red', 'top of image must land at 12 o\'clock');
+  assert.equal(at(3, 9), 'black', 'bottom of image must land at 6 o\'clock');
+});
+
 test('quantize: output passes expandBeads validation cleanly', () => {
   const rows = ['rr', 'rr'];
   const p = runQuantize(imageFrom(rows, { r: [220, 40, 40] }), ['--board', 'square:2x2']);
