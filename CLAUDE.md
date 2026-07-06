@@ -68,6 +68,7 @@ omission.
 open index.html                          # run the app (works over file://, offline)
 node --test                              # run the test suite (test/, built-in runner, no install)
 node tools/inspect.js <pattern.json>     # structure + buildability check; exits 2 on loose islands (--strict for guaranteed-contact only)
+node tools/quantize.js <image.png>       # image → pattern JSON (PNG only; see README for flags)
 node tools/preview.js <pattern.json>     # render to PNG via headless Chrome ($CHROME overrides the binary)
 node tools/embed-examples.js             # REQUIRED after adding/editing examples/*.json — regenerates the embedded block in index.html
 node tools/embed-core.js                 # REQUIRED after editing tools/core.js — re-embeds it into index.html (a test enforces this)

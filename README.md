@@ -168,6 +168,19 @@ Dependency-free node scripts in `tools/`, extracted from the design-iteration lo
 - `node --test` — runs the test suite in `test/` (uses node's built-in runner,
   no install needed): symmetry orbits, connectivity fixtures at both contact
   thresholds, bead-expansion validation, and the embed-drift check.
+- `node tools/quantize.js <image.png> [--board square:WxH|polar:N] [--colors N]
+  [--sym F[,mirror]] [--bg auto|#hex] [--drop-islands] [--out file.json]` — the
+  **image → pattern pipeline**: area-averages the image onto the peg grid,
+  k-means the sampled colors down in CIELAB space, then maps each cluster to the
+  nearest catalog color. No dithering (dither noise reads as random beads), no
+  AI — deterministic post-processing for diffusion output or any raster image.
+  Transparent pixels become empty pegs; `--bg auto` removes an opaque
+  background; polar `--sym` majority-votes each symmetry orbit. Islands are
+  flagged (or removed with `--drop-islands`). Source images should be
+  quantization-friendly: flat colors, bold shapes, plain background,
+  sticker/pixel-art style.
+- `tools/png.js` — minimal dependency-free PNG codec (decode + encode) used by
+  the quantizer and the test fixtures.
 - `node tools/inspect.js <pattern.json> [--strict]` — expands wedge symmetry exactly
   like the app and prints per-ring occupancy, color counts, and a **connectivity
   check** (connected components by physical bead contact). Exits non-zero if beads
@@ -185,8 +198,6 @@ buildability) → `preview` (aesthetics) → embed.
 
 ## Ideas for the next iteration
 
-- Image → pattern quantizer (deterministic: downsample + nearest-palette-color; polar
-  sampling for circular boards). No LLM needed for this mode.
 - Restrict the palette to owned colors + inventory counts ("do I have 96 white beads?").
 - More board shapes (hexagon, heart, star plates) — each is just a new template.
 - Printable build sheet: ring-by-ring bead list for following along while placing.

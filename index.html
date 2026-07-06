@@ -284,6 +284,78 @@
 'use strict';
 
 const PerlerCore = (() => {
+  /* ---- Palette (approximate Perler catalog colors) ---- */
+  const SOLID_COLORS = [
+    ['white', 'White', '#fdfdfc'],
+    ['cream', 'Cream', '#ede8c8'],
+    ['yellow', 'Yellow', '#fcd905'],
+    ['cheddar', 'Cheddar', '#ffb632'],
+    ['orange', 'Orange', '#f97e20'],
+    ['butterscotch', 'Butterscotch', '#dfa356'],
+    ['hot-coral', 'Hot Coral', '#ff424c'],
+    ['red', 'Red', '#d02b2e'],
+    ['cherry', 'Cherry', '#b02342'],
+    ['cranapple', 'Cranapple', '#7e2b47'],
+    ['raspberry', 'Raspberry', '#ad3f77'],
+    ['bubblegum', 'Bubblegum', '#ec6fa9'],
+    ['pink', 'Pink', '#dd6ba4'],
+    ['light-pink', 'Light Pink', '#f8c9d8'],
+    ['magenta', 'Magenta', '#f13596'],
+    ['purple', 'Purple', '#654e9f'],
+    ['pastel-lavender', 'Pastel Lavender', '#b1a0d6'],
+    ['plum', 'Plum', '#a54f9e'],
+    ['dark-blue', 'Dark Blue', '#2b3f87'],
+    ['blue', 'Blue', '#2f5fa5'],
+    ['cobalt', 'Cobalt', '#0f5bbd'],
+    ['light-blue', 'Light Blue', '#3d9ae0'],
+    ['pastel-blue', 'Pastel Blue', '#8cb5e2'],
+    ['robins-egg', "Robin's Egg", '#9cd6dc'],
+    ['turquoise', 'Turquoise', '#17a6b7'],
+    ['toothpaste', 'Toothpaste', '#bfe3e0'],
+    ['parrot-green', 'Parrot Green', '#0f9e8a'],
+    ['dark-green', 'Dark Green', '#0e6b3c'],
+    ['green', 'Green', '#169b4e'],
+    ['bright-green', 'Bright Green', '#4fbe53'],
+    ['light-green', 'Light Green', '#71c968'],
+    ['pastel-green', 'Pastel Green', '#a9dcae'],
+    ['kiwi-lime', 'Kiwi Lime', '#9ccb3b'],
+    ['prickly-pear', 'Prickly Pear', '#cbdf46'],
+    ['sand', 'Sand', '#e6d3a7'],
+    ['tan', 'Tan', '#ceac83'],
+    ['light-brown', 'Light Brown', '#8f6b4a'],
+    ['brown', 'Brown', '#57402f'],
+    ['rust', 'Rust', '#a04a34'],
+    ['salmon', 'Salmon', '#f98973'],
+    ['peach', 'Peach', '#f9c5a6'],
+    ['gray', 'Gray', '#9a9c9e'],
+    ['pewter', 'Pewter', '#7d8288'],
+    ['dark-gray', 'Dark Gray', '#53575d'],
+    ['black', 'Black', '#2b2b2b'],
+    ['gold', 'Gold', '#bb9241'],
+  ];
+
+  // Two-tone striped beads (pinwheel-segmented). Pattern JSON still stores a
+  // single color id; only rendering knows an entry has two colors.
+  const STRIPED_COLORS = [
+    ['striped-yellow-green', 'Striped Yellow/Green', '#f5df2e', '#a8cf45'],
+    ['striped-orange-red', 'Striped Orange/Red', '#f9941d', '#e8492b'],
+    ['striped-pink', 'Striped Pink', '#ee5fa4', '#f7c6d8'],
+    ['striped-purple', 'Striped Purple', '#a88fd6', '#e7e2f2'],
+  ];
+
+  const PALETTE = [
+    ...SOLID_COLORS.map(([id, name, hex]) => ({ id, name, hex, colors: [hex] })),
+    ...STRIPED_COLORS.map(([id, name, a, b]) => ({ id, name, hex: a, colors: [a, b] })),
+  ];
+
+  const PAL = Object.fromEntries(PALETTE.map(p => [p.id, p]));
+
+  function colorInfo(c) {
+    if (PAL[c]) return PAL[c];
+    if (/^#[0-9a-f]{6}$/i.test(c)) return { id: c, name: c, hex: c, colors: [c] };
+    return null;
+  }
+
   // Contact model (pitch = 1): same-ring neighbors sit ~1.047 apart, radially
   // aligned pegs on adjacent rings 1.0, staggered pegs on adjacent rings up to
   // ~1.13 (usually fuse — ironing spreads beads).
@@ -388,7 +460,10 @@ const PerlerCore = (() => {
     return { keys, lenient: components(near), strict: components(strong) };
   }
 
-  return { REACH_LENIENT, REACH_STRICT, pegXY, symCopies, expandBeads, connectivity };
+  return {
+    SOLID_COLORS, STRIPED_COLORS, PALETTE, PAL, colorInfo,
+    REACH_LENIENT, REACH_STRICT, pegXY, symCopies, expandBeads, connectivity,
+  };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PerlerCore;
@@ -398,71 +473,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = PerlerCore
 <script>
 'use strict';
 
-/* ---------------- Palette (approximate Perler catalog colors) ---------------- */
-const SOLID_COLORS = [
-  ['white', 'White', '#fdfdfc'],
-  ['cream', 'Cream', '#ede8c8'],
-  ['yellow', 'Yellow', '#fcd905'],
-  ['cheddar', 'Cheddar', '#ffb632'],
-  ['orange', 'Orange', '#f97e20'],
-  ['butterscotch', 'Butterscotch', '#dfa356'],
-  ['hot-coral', 'Hot Coral', '#ff424c'],
-  ['red', 'Red', '#d02b2e'],
-  ['cherry', 'Cherry', '#b02342'],
-  ['cranapple', 'Cranapple', '#7e2b47'],
-  ['raspberry', 'Raspberry', '#ad3f77'],
-  ['bubblegum', 'Bubblegum', '#ec6fa9'],
-  ['pink', 'Pink', '#dd6ba4'],
-  ['light-pink', 'Light Pink', '#f8c9d8'],
-  ['magenta', 'Magenta', '#f13596'],
-  ['purple', 'Purple', '#654e9f'],
-  ['pastel-lavender', 'Pastel Lavender', '#b1a0d6'],
-  ['plum', 'Plum', '#a54f9e'],
-  ['dark-blue', 'Dark Blue', '#2b3f87'],
-  ['blue', 'Blue', '#2f5fa5'],
-  ['cobalt', 'Cobalt', '#0f5bbd'],
-  ['light-blue', 'Light Blue', '#3d9ae0'],
-  ['pastel-blue', 'Pastel Blue', '#8cb5e2'],
-  ['robins-egg', "Robin's Egg", '#9cd6dc'],
-  ['turquoise', 'Turquoise', '#17a6b7'],
-  ['toothpaste', 'Toothpaste', '#bfe3e0'],
-  ['parrot-green', 'Parrot Green', '#0f9e8a'],
-  ['dark-green', 'Dark Green', '#0e6b3c'],
-  ['green', 'Green', '#169b4e'],
-  ['bright-green', 'Bright Green', '#4fbe53'],
-  ['light-green', 'Light Green', '#71c968'],
-  ['pastel-green', 'Pastel Green', '#a9dcae'],
-  ['kiwi-lime', 'Kiwi Lime', '#9ccb3b'],
-  ['prickly-pear', 'Prickly Pear', '#cbdf46'],
-  ['sand', 'Sand', '#e6d3a7'],
-  ['tan', 'Tan', '#ceac83'],
-  ['light-brown', 'Light Brown', '#8f6b4a'],
-  ['brown', 'Brown', '#57402f'],
-  ['rust', 'Rust', '#a04a34'],
-  ['salmon', 'Salmon', '#f98973'],
-  ['peach', 'Peach', '#f9c5a6'],
-  ['gray', 'Gray', '#9a9c9e'],
-  ['pewter', 'Pewter', '#7d8288'],
-  ['dark-gray', 'Dark Gray', '#53575d'],
-  ['black', 'Black', '#2b2b2b'],
-  ['gold', 'Gold', '#bb9241'],
-];
-
-// Two-tone striped beads (pinwheel-segmented). Pattern JSON still stores a
-// single color id; only rendering knows an entry has two colors.
-const STRIPED_COLORS = [
-  ['striped-yellow-green', 'Striped Yellow/Green', '#f5df2e', '#a8cf45'],
-  ['striped-orange-red', 'Striped Orange/Red', '#f9941d', '#e8492b'],
-  ['striped-pink', 'Striped Pink', '#ee5fa4', '#f7c6d8'],
-  ['striped-purple', 'Striped Purple', '#a88fd6', '#e7e2f2'],
-];
-
-const PALETTE = [
-  ...SOLID_COLORS.map(([id, name, hex]) => ({ id, name, hex, colors: [hex] })),
-  ...STRIPED_COLORS.map(([id, name, a, b]) => ({ id, name, hex: a, colors: [a, b] })),
-];
-
-const PAL = Object.fromEntries(PALETTE.map(p => [p.id, p]));
+/* ---------------- Palette (data lives in the shared core) ---------------- */
+const { PALETTE, PAL, colorInfo } = PerlerCore;
 
 // CSS background for swatches: solid color, or a conic pinwheel for stripes.
 function cssForColor(info) {
@@ -476,11 +488,6 @@ function cssForColor(info) {
 /* Built-in example patterns. Regenerate from examples/*.json with:
    node tools/embed-examples.js */
 const EXAMPLES = /* EXAMPLES:BEGIN */{"snowflake":{"version":1,"board":{"type":"polar","name":"circle-14","rings":[1,6,12,18,24,30,36,42,48,54,60,66,72,78]},"symmetry":{"fold":6,"mirror":true},"beads":[{"ring":0,"index":0,"color":"white"},{"ring":1,"index":0,"color":"light-blue"},{"ring":2,"index":0,"color":"light-blue"},{"ring":3,"index":0,"color":"white"},{"ring":4,"index":0,"color":"light-blue"},{"ring":5,"index":0,"color":"light-blue"},{"ring":6,"index":0,"color":"white"},{"ring":6,"index":1,"color":"light-blue"},{"ring":7,"index":0,"color":"white"},{"ring":7,"index":1,"color":"light-blue"},{"ring":8,"index":0,"color":"white"},{"ring":8,"index":1,"color":"pastel-blue"},{"ring":9,"index":0,"color":"light-blue"},{"ring":9,"index":1,"color":"white"},{"ring":10,"index":0,"color":"light-blue"},{"ring":10,"index":1,"color":"pastel-blue"},{"ring":11,"index":0,"color":"white"}]}}/* EXAMPLES:END */;
-function colorInfo(c) {
-  if (PAL[c]) return PAL[c];
-  if (/^#[0-9a-f]{6}$/i.test(c)) return { id: c, name: c, hex: c, colors: [c] };
-  return null;
-}
 
 /* ---------------- State ---------------- */
 const PITCH = 10, BEAD_R = 4.7, HOLE_R = 1.9, DOT_R = 1.25;
