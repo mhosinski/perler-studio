@@ -1246,31 +1246,27 @@ document.getElementById('imageFile').addEventListener('change', async e => {
   }
 });
 
-// Decode via canvas — the browser handles PNG/JPEG/WebP/HEIC natively.
-// Downscale huge photos first: sampling cost is O(pixels), and detail beyond
-// ~1024px can't survive a ≤60-peg grid anyway.
+// Decode via an <img> + canvas — the browser handles PNG/JPEG/WebP/HEIC
+// natively. Deliberately NOT createImageBitmap: its EXIF-orientation handling
+// is inconsistent across engines, so phone photos (rotated sensor pixels + an
+// orientation tag) came in sideways. HTML image decoding applies EXIF
+// orientation by default everywhere. Downscale huge photos: sampling cost is
+// O(pixels), and detail beyond ~1024px can't survive a ≤60-peg grid anyway.
 async function decodeImageFile(file) {
-  let src = null;
-  if (window.createImageBitmap) {
-    try { src = await createImageBitmap(file); } catch { /* fall through */ }
-  }
-  if (!src) {
-    src = await new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file);
-      const im = new Image();
-      im.onload = () => { URL.revokeObjectURL(url); resolve(im); };
-      im.onerror = () => { URL.revokeObjectURL(url); reject(new Error('unsupported image format')); };
-      im.src = url;
-    });
-  }
-  const W = src.width || src.naturalWidth, H = src.height || src.naturalHeight;
+  const src = await new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => { URL.revokeObjectURL(url); resolve(im); };
+    im.onerror = () => { URL.revokeObjectURL(url); reject(new Error('unsupported image format')); };
+    im.src = url;
+  });
+  const W = src.naturalWidth, H = src.naturalHeight;
   const scale = Math.min(1, 1024 / Math.max(W, H));
   const w = Math.max(1, Math.round(W * scale)), h = Math.max(1, Math.round(H * scale));
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
   const ctx = cv.getContext('2d');
   ctx.drawImage(src, 0, 0, w, h);
-  if (src.close) src.close();
   return ctx.getImageData(0, 0, w, h);
 }
 
