@@ -145,8 +145,59 @@ test('share codec: round-trips a full pattern payload', async () => {
   const snowflake = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'examples', 'snowflake.json'), 'utf8'));
   const payload = { v: 1, name: 'Snowflake ❄', pattern: snowflake };
   const code = await core.encodeShare(payload);
-  assert.match(code, /^[gr][A-Za-z0-9_-]+$/, 'must be a URL-safe token');
+  assert.match(code, /^[GR][A-Za-z0-9_-]+[0-2]$/, 'URL-safe token ending in a pad digit');
   assert.deepEqual(await core.decodeShare(code), payload);
+});
+
+test('share codec: token never ends in a linkifier-trimmable character', async () => {
+  // '-' and '_' get trimmed from tapped links by messaging apps — the pad
+  // digit terminator guarantees an alphanumeric tail on every token.
+  for (let i = 0; i < 12; i++) {
+    const code = await core.encodeShare({ i, pad: 'x'.repeat(i) });
+    assert.match(code[code.length - 1], /[0-2]/, `token ${i} ends in ${code[code.length - 1]}`);
+  }
+});
+
+test('share codec: legacy lowercase-flag tokens still decode', async () => {
+  const zlib = require('zlib');
+  const payload = { v: 1, name: 'old link', pattern: { board: { type: 'square', width: 2, height: 2 }, beads: [] } };
+  const legacy = 'g' + zlib.gzipSync(JSON.stringify(payload)).toString('base64')
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  assert.deepEqual(await core.decodeShare(legacy), payload);
+});
+
+test('packShare/unpackShare: compact v2 round-trips polar wedge patterns exactly', async () => {
+  const snowflake = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'examples', 'snowflake.json'), 'utf8'));
+  const packed = core.packShare('Snowflake', snowflake);
+  assert.equal(packed.v, 2);
+  const { name, pattern } = core.unpackShare(packed);
+  assert.equal(name, 'Snowflake');
+  // both must expand to the identical bead map (v2 stores the expanded form)
+  const a = core.patternJSON(snowflake.board, core.expandBeads(snowflake.board, snowflake.beads, snowflake.symmetry).beads);
+  const b = core.patternJSON(pattern.board, core.expandBeads(pattern.board, pattern.beads, { fold: 1, mirror: false }).beads);
+  assert.deepEqual(b, a);
+});
+
+test('packShare: dense photo-import boards stay text-message sized', async () => {
+  // fully-filled 29x29 in 8 colors — the worst realistic case for URL length
+  const board = { type: 'square', name: 'square-29x29', width: 29, height: 29 };
+  const colors = ['red', 'blue', 'green', 'yellow', 'black', 'white', 'tan', '#a1b2c3'];
+  const beads = [];
+  for (let r = 0; r < 29; r++) for (let c = 0; c < 29; c++) {
+    beads.push({ row: r, col: c, color: colors[(r * 31 + c * 7) % 8] });
+  }
+  const pattern = { version: 1, board, beads };
+  const code = await core.encodeShare(core.packShare('Dense', pattern));
+  assert.ok(code.length < 1200, `expected compact token, got ${code.length} chars`);
+  const { pattern: back } = core.unpackShare(await core.decodeShare(code));
+  assert.deepEqual(core.patternJSON(board, core.expandBeads(board, back.beads, { fold: 1, mirror: false }).beads),
+    core.patternJSON(board, core.expandBeads(board, beads, { fold: 1, mirror: false }).beads));
+});
+
+test('unpackShare: rejects malformed v2 payloads', () => {
+  const board = { type: 'square', width: 2, height: 2 };
+  assert.throws(() => core.unpackShare({ v: 2, n: 'x', b: board, c: ['red'], p: 'A' }), /malformed/);
+  assert.throws(() => core.unpackShare({ v: 2, n: 'x', b: board, c: [], p: 'A...' }), /malformed/);
 });
 
 test('share codec: compresses real patterns well below raw JSON size', async () => {

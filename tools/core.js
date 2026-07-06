@@ -392,41 +392,105 @@ const PerlerCore = (() => {
 
   /* ---- Share-link codec ----
      gzip + base64url of a JSON payload, for pattern-in-URL sharing
-     (#d=<code>). CompressionStream exists in modern browsers and node ≥18;
-     without it we fall back to uncompressed (flag prefix 'r' vs 'g'). */
-  const toB64u = bytes => {
+     (#d=<code>). Token format: 'G' (gzip) or 'R' (raw) + base64url + a
+     pad-count digit. The trailing digit matters: message-app linkifiers trim
+     trailing '-'/'_' from tapped links (which truncated real shares), so the
+     token must always end alphanumeric. Legacy 'g'/'r' tokens still decode. */
+  const toB64 = bytes => {
     let s = '';
     for (let i = 0; i < bytes.length; i += 0x8000) {
       s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
     }
-    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return btoa(s);
   };
   const fromB64u = str =>
     Uint8Array.from(atob(str.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
 
+  const toToken = (flag, bytes) => {
+    const b64 = toB64(bytes);
+    const pad = (b64.match(/=+$/) || [''])[0].length;
+    return flag + b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') + pad;
+  };
+
   async function encodeShare(obj) {
     const bytes = new TextEncoder().encode(JSON.stringify(obj));
-    if (typeof CompressionStream === 'undefined') return 'r' + toB64u(bytes);
+    if (typeof CompressionStream === 'undefined') return toToken('R', bytes);
     const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'));
-    return 'g' + toB64u(new Uint8Array(await new Response(stream).arrayBuffer()));
+    return toToken('G', new Uint8Array(await new Response(stream).arrayBuffer()));
   }
 
   async function decodeShare(code) {
     const flag = code[0];
-    let bytes = fromB64u(code.slice(1));
-    if (flag === 'g') {
+    let body;
+    if (flag === 'G' || flag === 'R') body = code.slice(1, -1); // drop pad digit
+    else if (flag === 'g' || flag === 'r') body = code.slice(1); // legacy tokens
+    else throw new Error('unknown share-link format');
+    let bytes = fromB64u(body);
+    if (flag === 'G' || flag === 'g') {
       const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
       bytes = new Uint8Array(await new Response(stream).arrayBuffer());
-    } else if (flag !== 'r') {
-      throw new Error('unknown share-link format');
     }
     return JSON.parse(new TextDecoder().decode(bytes));
+  }
+
+  /* ---- Compact share payload (v2) ----
+     Color table + one char per peg ('.' = empty) in canonical board order —
+     gzips ~10x smaller than pattern JSON for dense boards, which keeps even
+     photo-import share URLs text-message sized. */
+  const PEG_IDX = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-';
+  function boardKeys(board) {
+    const keys = [];
+    if (board.type === 'polar') {
+      board.rings.forEach((n, r) => { for (let i = 0; i < n; i++) keys.push(r + ',' + i); });
+    } else {
+      for (let r = 0; r < board.height; r++) for (let c = 0; c < board.width; c++) keys.push(r + ',' + c);
+    }
+    return keys;
+  }
+
+  // Returns null when the pattern can't be packed (too many distinct colors);
+  // callers fall back to the v1 {v:1, name, pattern} payload.
+  function packShare(name, pattern) {
+    const board = pattern.board;
+    const { beads } = expandBeads(board, pattern.beads,
+      pattern.symmetry && Number.isInteger(pattern.symmetry.fold)
+        ? { fold: pattern.symmetry.fold, mirror: !!pattern.symmetry.mirror }
+        : { fold: 1, mirror: false });
+    const colors = [...new Set(beads.values())];
+    if (colors.length > PEG_IDX.length) return null;
+    const p = boardKeys(board)
+      .map(k => { const c = beads.get(k); return c ? PEG_IDX[colors.indexOf(c)] : '.'; })
+      .join('');
+    return { v: 2, n: name, b: board, c: colors, p };
+  }
+
+  // Accepts v2 compact payloads and v1 {v:1, name, pattern} payloads.
+  function unpackShare(obj) {
+    if (obj && obj.v === 2) {
+      const board = obj.b;
+      const keys = boardKeys(board);
+      if (typeof obj.p !== 'string' || obj.p.length !== keys.length || !Array.isArray(obj.c)) {
+        throw new Error('malformed pattern data');
+      }
+      const beads = [];
+      for (let i = 0; i < keys.length; i++) {
+        const ch = obj.p[i];
+        if (ch === '.') continue;
+        const idx = PEG_IDX.indexOf(ch);
+        const color = idx >= 0 ? obj.c[idx] : null;
+        if (!color) throw new Error('malformed pattern data');
+        const [a, b] = keys[i].split(',').map(Number);
+        beads.push(board.type === 'polar' ? { ring: a, index: b, color } : { row: a, col: b, color });
+      }
+      return { name: obj.n, pattern: { version: 1, board, beads } };
+    }
+    return { name: obj && obj.name, pattern: obj && obj.pattern };
   }
 
   return {
     SOLID_COLORS, STRIPED_COLORS, PALETTE, PAL, colorInfo,
     REACH_LENIENT, REACH_STRICT, pegXY, symCopies, expandBeads, connectivity,
-    patternJSON, quantizeImage, encodeShare, decodeShare,
+    patternJSON, quantizeImage, encodeShare, decodeShare, packShare, unpackShare,
   };
 })();
 
