@@ -58,42 +58,164 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 <!-- END BEADS INTEGRATION -->
 
 
-## Session Handoff Protocol
+## Session Start
 
-The bridge between sessions is a single beads memory with the fixed key
-`handoff-next-session`. Because `bd remember --key` upserts, there is exactly
-one handoff — always current, never a pile of stale ones. Beads issues hold the
-durable backlog (status, priorities, dependencies); the handoff holds the
-ephemeral connective tissue — which bead to pick up next, pending user gates,
-and the decisions/rationale that have no natural home in an issue.
+At the beginning of every session, run these steps in order:
 
-### Session start (mandatory, in order)
+**1. Read `docs/GENESIS.md` in full** (use the Read tool — do not truncate with
+`sed`/`head`). It holds the original intent: inspirations, philosophy, the *why*
+before any code. Ground yourself in it before making any recommendation or
+design decision.
 
-1. Run `bd prime` and read the FULL output (workflow reference + all stored memories).
-2. Run `bd recall handoff-next-session` — last session's state and where to resume.
-3. Read `README.md` in full — it is authoritative for user-facing behavior.
+**2. Run `bd prime`** — this outputs the full beads workflow reference
+(commands, rules, memories). Read the entire output; do not skip or summarize.
+Run it manually at the start of every session; there is no reliable startup
+hook for this.
 
-### Session end (mandatory — work is NOT complete until all of these are done)
+```bash
+bd prime
+```
 
-1. File beads for all remaining and follow-up work.
-2. Run quality gates: `node --test` (plus `tools/preview.js` when rendering or
-   startup changed).
-3. Close finished beads; update in-progress ones.
-4. Commit and push (publishing is part of "done" here — pushing main deploys
-   GitHub Pages; verify per the deploy memory). Sync the tracker with
-   `bd dolt push`.
-5. Update the handoff — same key every time:
+**3. Load handoff notes** — the last session's mechanics and where to resume.
 
+```bash
+bd recall handoff-next-session
+```
+
+**4. Read `README.md`** — it is authoritative for user-facing behavior; keep it
+that way when behavior changes.
+
+## Session Completion
+
+**When ending a work session**, you MUST complete ALL steps below. Work is NOT
+complete until `git push` succeeds. (This section is this repository's explicit
+opt-in to the team-maintainer profile in the managed Beads block above: agents
+close beads, run gates, commit, and push as part of session close. A current
+"do not commit"/"do not push" instruction still wins.)
+
+**MANDATORY WORKFLOW:**
+
+1. **File issues for remaining work** - Create beads for anything that needs follow-up
+2. **Run quality gates** (if code changed):
    ```bash
-   bd remember "handoff-next-session: <date>, <one-phrase session summary>; <repo/build state, e.g. 'tree CLEAN, pushed, live verified'>; <any pending user gate>. WHAT LANDED: <items with bead IDs, key decisions + rationale>. NEXT STEPS in order: <prioritized, with bead IDs>. PROCESS: <workflow lessons hardened this session>." --key handoff-next-session
+   node --test                            # full suite; must be green
+   node tools/preview.js examples/snowflake.json   # when rendering or startup changed
    ```
+   If `tools/core.js` changed, `node tools/embed-core.js` must have been run
+   (the drift test enforces this).
+3. **Update issue status** - Close finished work, update in-progress items
+4. **PUSH TO REMOTE** - This is MANDATORY. Never rebase a dirty tree: fetch,
+   check whether the remote is ahead (`git log --oneline main..origin/main`),
+   and if it is empty a plain `git push` is a clean fast-forward. Only
+   reconcile if the remote has diverged, and never auto-stash user WIP.
+   ```bash
+   git push
+   git status  # MUST show "up to date with origin"
+   ```
+   Pushing `main` deploys GitHub Pages — publishing is part of "done" here.
+   Watch the run and verify the live site per the deploy memory (never re-run
+   a failed pages run; dispatch a fresh one). Then sync the tracker:
+   ```bash
+   bd dolt push
+   ```
+5. **Clean up** - Clear stashes, prune remote branches
+6. **Verify** - All changes committed AND pushed
+7. **Hand off** - Update `handoff-next-session` (see shape below)
 
-**Content discipline:** the handoff records *state and rationale, not tasks* —
-tasks live in beads. Always include: any pending user gate (e.g. "user was
-about to device-test X; confirm before building on it"), what landed with WHY
-decisions were made (so the next session doesn't re-derive or re-litigate),
-next steps in priority order with bead IDs, and process lessons so workflow
-improvements compound instead of being relearned.
+**CRITICAL RULES:**
+- Work is NOT complete until `git push` succeeds
+- NEVER stop before pushing - that leaves work stranded locally
+- NEVER say "ready to push when you are" - YOU must push
+- If push fails, resolve and retry until it succeeds
+
+### Handoff Shape
+
+The handoff memory records state and rationale, not tasks — tasks live in beads
+issues; the handoff is the bridge that tells the next session which bead to
+pick up and what context it needs. There is exactly one handoff (`bd remember
+--key` upserts — always current, never a pile of stale ones). Follow this shape:
+
+- **Header line:** date, one-phrase session summary, repo/build state, and any
+  **pending gate** (e.g. "user was about to test X; confirm before building on it")
+- **WHAT LANDED:** each completed item with its bead ID, key values/decisions,
+  and *why* — enough that the next session doesn't re-derive or re-litigate
+- **NEXT STEPS in order:** prioritized, with bead IDs; note which beads stay
+  open and which are close-eligible pending confirmation
+- **PROCESS:** workflow lessons hardened this session — mistakes made and the
+  corrected procedure — so process improvements compound
+
+```bash
+bd remember "handoff-next-session: <date>, <summary>; <repo state>; <pending gate>. WHAT LANDED: ... NEXT STEPS in order: ... PROCESS: ..." --key handoff-next-session
+```
+
+## Parking Work (Deferred Tails)
+
+A feature push typically reaches ~80% before hitting diminishing returns and the
+work with higher leverage moves elsewhere. That is a deliberate, healthy pivot —
+not abandonment. Park the remaining tail instead of forcing it to completion or
+losing track of it.
+
+**To park an initiative's tail** (when it's "good enough for now"):
+
+1. `bd update <remaining open descendant ids> --status deferred` — moves the tail
+   out of the active working set. Add a `--reason` noting why/where you stopped.
+2. **Keep the epic itself `open` — do NOT close it.** An open epic with done
+   children and a deferred tail is the truthful record: substantial work done,
+   remainder deliberately on ice. Closing it would read as finished and risk
+   `bd epic close-eligible` treating parked work as complete.
+3. `bd note <epic>` — one line on what remains and why, so the narrative survives.
+
+**Views** (aliases in `~/.zshrc`):
+
+```bash
+bda   # bd list --status open,in_progress,blocked --limit 0  → active set (hides deferred/closed)
+bdp   # bd list --status deferred --limit 0                  → parked backlog on demand
+```
+
+**To resume:** `bd children <epic>` (or `bdp`), then `bd update <ids> --status open`
+to pull items back into the active set.
+
+**Why `deferred`, not `closed`:** `deferred` (frozen) means "deliberately on ice
+for later" — it leaves `bda`/`bd ready`, stays local, searchable, and instantly
+resurfaceable, and does not inflate an epic's completion. `closed` means *done*;
+using it for parked work loses the fact that real items remain.
+
+## Testing Philosophy
+
+Use tests to protect core rules and formulas, not to simulate the full runtime.
+
+In this project the split is sharp: everything in `tools/core.js` — symmetry
+orbits, connectivity/contact math, bead expansion and validation, the
+quantization pipeline, the share codec — is pure logic that runs under
+`node --test` with no browser. That is where tests belong, plus the embed-drift
+test that keeps the app's copy of the core honest.
+
+Avoid brittle automated tests for behavior that depends on live browser state:
+SVG rendering, pointer/touch gestures, the share sheet, localStorage flows,
+layout at breakpoints. For those, use the headless-Chrome harness pattern
+(`tools/preview.js` and scratch harnesses that inject a script and screenshot —
+see PROCESS notes in past handoffs) plus concise manual smoke-test notes in the
+bead or handoff. Real-device iOS checks are a named pending gate when touch
+behavior changes.
+
+When adding a feature, extract pure helpers into the core only when it makes
+the rule easier to test or reuse. Do not add abstractions solely to satisfy a
+test.
+
+## Feature Implementation Order
+
+For every new feature, implement in this sequence (adapted for a serverless
+single-file app):
+
+1. Shared constants / palette / schema additions in `tools/core.js`
+2. Pure logic in `tools/core.js` (no DOM, no node APIs beyond web-compatible
+   globals — the core runs in both browser and node)
+3. `node tools/embed-core.js` to re-embed (the drift test enforces this)
+4. CLI wrapper in `tools/` when the feature has a scripted use
+5. App UI wiring in `index.html` (DOM, events, CSS — thin over the core)
+6. Focused `node --test` coverage for rules, formulas, validation, and codecs
+7. Headless-Chrome harness screenshot for browser behavior; real-device smoke
+   test for touch; deploy and verify the live site
 
 ## Build & Test
 
