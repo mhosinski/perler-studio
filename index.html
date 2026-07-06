@@ -1472,12 +1472,20 @@ async function sharePattern() {
     const url = SHARE_BASE + '#d=' + code;
     if (navigator.share) {
       // Native share sheet, with a picture of the board when the platform
-      // accepts files (iMessage then shows image + tappable link).
+      // accepts files. Prefer a dedicated url field (targets render it as a
+      // real link); some targets drop free text around attachments, so the
+      // graduated fallback keeps the link deliverable everywhere.
       const png = await renderPngFile(name).catch(() => null);
-      const withFile = png && navigator.canShare && navigator.canShare({ files: [png] });
-      await navigator.share(withFile
-        ? { files: [png], text: `Perler pattern "${name}" — open it in the studio: ${url}` }
-        : { title: `Perler pattern "${name}"`, url });
+      const label = `Perler pattern "${name}" — the link opens an editable copy`;
+      let payload = { title: `Perler pattern "${name}"`, url };
+      if (png && navigator.canShare) {
+        if (navigator.canShare({ files: [png], text: label, url })) {
+          payload = { files: [png], text: label, url };
+        } else if (navigator.canShare({ files: [png] })) {
+          payload = { files: [png], text: `${label}: ${url}` };
+        }
+      }
+      await navigator.share(payload);
       return;
     }
     await navigator.clipboard.writeText(url);
