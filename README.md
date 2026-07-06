@@ -26,6 +26,14 @@ destructive actions stay behind the explicit button. Painting a bead with its
 already-selected color removes it (toggle); the paint/erase decision is made at
 the start of each stroke, so drags never flicker between the two.
 
+The 🪣 **Fill** tool (between Paint and Erase; its own round button in the
+phone bottom bar) floods a contiguous region in one tap: tap a colored region
+to recolor it, tap an enclosed empty area to fill it, and — same toggle
+convention as the brush — tap a region already in the selected color to erase
+it. Fills respect the active symmetry, land as a single undo step, and never
+cross gaps the renderer draws as visually separated (an unbounded empty tap
+fills the whole board, as buckets do).
+
 Phone-width screens get a board-first layout: a slim top bar (menu, design name,
 undo/redo), the palette as a thumb-reachable strip along the bottom with an
 erase toggle, and everything else — designs, board setup, symmetry, bead counts,

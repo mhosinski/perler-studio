@@ -207,7 +207,7 @@
       background: var(--panel); border-top: 1px solid var(--line);
       min-width: 0;
     }
-    #bottomBar #btnEraseMobile {
+    #bottomBar #btnEraseMobile, #bottomBar #btnBucketMobile {
       flex: none; width: 40px; height: 40px; border-radius: 50%;
       padding: 0; font-size: 17px;
     }
@@ -263,6 +263,7 @@
     <h2>Tools</h2>
     <div class="row">
       <button id="toolPaint" class="active">🖌 Paint</button>
+      <button id="toolBucket" title="Fill a contiguous region with the selected color">🪣 Fill</button>
       <button id="toolErase">⌫ Erase</button>
       <button id="btnUndo" title="Cmd/Ctrl+Z">↩ Undo</button>
       <button id="btnRedo" title="Cmd/Ctrl+Shift+Z">↪ Redo</button>
@@ -355,6 +356,7 @@
      itself moves between homes on breakpoint change — one palette, two homes) -->
 <div id="bottomBar">
   <button id="btnEraseMobile" title="Erase">⌫</button>
+  <button id="btnBucketMobile" title="Fill">🪣</button>
   <div id="paletteSlot"></div>
 </div>
 <div id="drawerOverlay"></div>
@@ -575,6 +577,51 @@ const PerlerCore = (() => {
       return out.sort((a, b) => b.length - a.length);
     };
     return { keys, lenient: components(near), strict: components(strong) };
+  }
+
+  // Fill adjacency (paint bucket). Square: plain 4-neighbor. Polar: any peg
+  // on the same or an adjacent ring within STRICT reach — the lenient stagger
+  // threshold would let an empty-region fill leak across gaps the renderer
+  // draws as visibly separated; fill boundaries must match what the eye sees.
+  function pegNeighbors(board, key) {
+    const [a, b] = key.split(',').map(Number);
+    const out = [];
+    if (board.type !== 'polar') {
+      if (a > 0) out.push((a - 1) + ',' + b);
+      if (a < board.height - 1) out.push((a + 1) + ',' + b);
+      if (b > 0) out.push(a + ',' + (b - 1));
+      if (b < board.width - 1) out.push(a + ',' + (b + 1));
+      return out;
+    }
+    const [x, y] = pegXY(board, key);
+    for (let r = Math.max(0, a - 1); r <= Math.min(board.rings.length - 1, a + 1); r++) {
+      const n = board.rings[r];
+      for (let i = 0; i < n; i++) {
+        if (r === a && i === b) continue;
+        const [px, py] = pegXY(board, r + ',' + i);
+        const dx = x - px, dy = y - py;
+        if (dx * dx + dy * dy <= REACH_STRICT * REACH_STRICT) out.push(r + ',' + i);
+      }
+    }
+    return out;
+  }
+
+  // Region fill: the contiguous pegs sharing the start peg's state — its
+  // color id, or empty (undefined) — reachable via pegNeighbors. Pure: returns
+  // the keys; the caller decides what to set them to. `beads` is a
+  // key -> color Map; startKey must be a real peg on the board.
+  function floodFill(board, beads, startKey) {
+    const target = beads.get(startKey);
+    const seen = new Set([startKey]);
+    const stack = [startKey], out = [];
+    while (stack.length) {
+      const k = stack.pop();
+      out.push(k);
+      for (const nb of pegNeighbors(board, k)) {
+        if (!seen.has(nb) && beads.get(nb) === target) { seen.add(nb); stack.push(nb); }
+      }
+    }
+    return out;
   }
 
   /* ---- Pattern JSON (canonical export shape) ---- */
@@ -902,6 +949,7 @@ const PerlerCore = (() => {
   return {
     SOLID_COLORS, STRIPED_COLORS, PALETTE, PAL, colorInfo,
     REACH_LENIENT, REACH_STRICT, pegXY, symCopies, expandBeads, connectivity,
+    pegNeighbors, floodFill,
     patternJSON, quantizeImage, encodeShare, decodeShare, packShare, unpackShare,
   };
 })();
@@ -1112,6 +1160,23 @@ svg.addEventListener('pointerdown', e => {
   // (undo/redo taps), never the start of a paint stroke.
   if (e.pointerType === 'touch' && gestureTouches.size > 0) return;
   e.preventDefault();
+  // Bucket: one tap fills the whole region — no drag, one undo entry. Same
+  // toggle convention as the brush: filling a region that already has the
+  // selected color erases it (and right-click always erases).
+  if (tool === 'bucket') {
+    const key = t.dataset.key;
+    const prev = stateNow();
+    const erase = e.button === 2 || beads.get(key) === curColor;
+    for (const k of PerlerCore.floodFill(board, beads, key)) {
+      for (const s of symCopies(k)) {
+        if (erase) beads.delete(s); else beads.set(s, curColor);
+        refreshPeg(s);
+      }
+    }
+    scheduleSync();
+    commitUndo(prev);
+    return;
+  }
   strokePrev = stateNow();
   strokePointer = e.pointerId;
   dragging = true;
@@ -2009,7 +2074,10 @@ function buildPalette() {
     if (p.id === curColor) btn.classList.add('sel');
     btn.addEventListener('click', () => {
       curColor = p.id;
-      tool = 'paint';
+      // Picking a color implies applying it: leave erase, but keep the
+      // bucket active — "select fill, pick a color, tap the region" must
+      // not lose the tool between steps.
+      if (tool === 'erase') tool = 'paint';
       setToolButtons();
       el.querySelectorAll('button').forEach(b => b.classList.toggle('sel', b.dataset.id === p.id));
       document.getElementById('curColor').textContent = 'Selected: ' + p.name;
@@ -2021,10 +2089,13 @@ function buildPalette() {
 
 function setToolButtons() {
   document.getElementById('toolPaint').classList.toggle('active', tool === 'paint');
+  document.getElementById('toolBucket').classList.toggle('active', tool === 'bucket');
   document.getElementById('toolErase').classList.toggle('active', tool === 'erase');
   document.getElementById('btnEraseMobile').classList.toggle('active', tool === 'erase');
+  document.getElementById('btnBucketMobile').classList.toggle('active', tool === 'bucket');
 }
 document.getElementById('toolPaint').addEventListener('click', () => { tool = 'paint'; setToolButtons(); });
+document.getElementById('toolBucket').addEventListener('click', () => { tool = 'bucket'; setToolButtons(); });
 document.getElementById('toolErase').addEventListener('click', () => { tool = 'erase'; setToolButtons(); });
 document.getElementById('btnUndo').addEventListener('click', undo);
 document.getElementById('btnRedo').addEventListener('click', redo);
@@ -2057,6 +2128,10 @@ document.getElementById('topUndo').addEventListener('click', undo);
 document.getElementById('topRedo').addEventListener('click', redo);
 document.getElementById('btnEraseMobile').addEventListener('click', () => {
   tool = tool === 'erase' ? 'paint' : 'erase';
+  setToolButtons();
+});
+document.getElementById('btnBucketMobile').addEventListener('click', () => {
+  tool = tool === 'bucket' ? 'paint' : 'bucket';
   setToolButtons();
 });
 

@@ -185,6 +185,51 @@ const PerlerCore = (() => {
     return { keys, lenient: components(near), strict: components(strong) };
   }
 
+  // Fill adjacency (paint bucket). Square: plain 4-neighbor. Polar: any peg
+  // on the same or an adjacent ring within STRICT reach — the lenient stagger
+  // threshold would let an empty-region fill leak across gaps the renderer
+  // draws as visibly separated; fill boundaries must match what the eye sees.
+  function pegNeighbors(board, key) {
+    const [a, b] = key.split(',').map(Number);
+    const out = [];
+    if (board.type !== 'polar') {
+      if (a > 0) out.push((a - 1) + ',' + b);
+      if (a < board.height - 1) out.push((a + 1) + ',' + b);
+      if (b > 0) out.push(a + ',' + (b - 1));
+      if (b < board.width - 1) out.push(a + ',' + (b + 1));
+      return out;
+    }
+    const [x, y] = pegXY(board, key);
+    for (let r = Math.max(0, a - 1); r <= Math.min(board.rings.length - 1, a + 1); r++) {
+      const n = board.rings[r];
+      for (let i = 0; i < n; i++) {
+        if (r === a && i === b) continue;
+        const [px, py] = pegXY(board, r + ',' + i);
+        const dx = x - px, dy = y - py;
+        if (dx * dx + dy * dy <= REACH_STRICT * REACH_STRICT) out.push(r + ',' + i);
+      }
+    }
+    return out;
+  }
+
+  // Region fill: the contiguous pegs sharing the start peg's state — its
+  // color id, or empty (undefined) — reachable via pegNeighbors. Pure: returns
+  // the keys; the caller decides what to set them to. `beads` is a
+  // key -> color Map; startKey must be a real peg on the board.
+  function floodFill(board, beads, startKey) {
+    const target = beads.get(startKey);
+    const seen = new Set([startKey]);
+    const stack = [startKey], out = [];
+    while (stack.length) {
+      const k = stack.pop();
+      out.push(k);
+      for (const nb of pegNeighbors(board, k)) {
+        if (!seen.has(nb) && beads.get(nb) === target) { seen.add(nb); stack.push(nb); }
+      }
+    }
+    return out;
+  }
+
   /* ---- Pattern JSON (canonical export shape) ---- */
   function patternJSON(board, beads) {
     const arr = [];
@@ -510,6 +555,7 @@ const PerlerCore = (() => {
   return {
     SOLID_COLORS, STRIPED_COLORS, PALETTE, PAL, colorInfo,
     REACH_LENIENT, REACH_STRICT, pegXY, symCopies, expandBeads, connectivity,
+    pegNeighbors, floodFill,
     patternJSON, quantizeImage, encodeShare, decodeShare, packShare, unpackShare,
   };
 })();

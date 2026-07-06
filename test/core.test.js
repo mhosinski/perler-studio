@@ -129,6 +129,63 @@ test('connectivity: components come back largest-first with island keys addressa
   assert.deepEqual(res.lenient[1].map(i => res.keys[i]), ['5,5']);
 });
 
+/* ---------------- flood fill (paint bucket) ---------------- */
+
+test('pegNeighbors: square corners have 2 neighbors, no diagonals', () => {
+  assert.deepEqual(new Set(core.pegNeighbors(SQUARE, '0,0')), new Set(['1,0', '0,1']));
+});
+
+test('pegNeighbors: polar center touches every ring-1 peg', () => {
+  const nbs = core.pegNeighbors(POLAR, '0,0');
+  assert.deepEqual(new Set(nbs), new Set(['1,0', '1,1', '1,2', '1,3', '1,4', '1,5']));
+});
+
+test('floodFill: recolors exactly the contiguous same-color region', () => {
+  const beads = new Map([
+    ['0,0', 'black'], ['0,1', 'black'], ['1,1', 'black'], // L-shaped region
+    ['1,2', 'white'],                                     // different color borders it
+    ['3,3', 'black'],                                     // same color, not contiguous
+  ]);
+  const fill = core.floodFill(SQUARE, beads, '0,0');
+  assert.deepEqual(new Set(fill), new Set(['0,0', '0,1', '1,1']));
+});
+
+test('floodFill: empty region fills out to bead boundaries, not through them', () => {
+  // a closed diamond of beads around the empty peg 2,2
+  const wall = ['1,2', '2,1', '2,3', '3,2'];
+  const beads = new Map(wall.map(k => [k, 'black']));
+  const fill = core.floodFill(SQUARE, beads, '2,2');
+  assert.deepEqual(fill, ['2,2']);
+});
+
+test('floodFill: unbounded empty click fills every empty peg on the board', () => {
+  const beads = new Map([['4,4', 'black']]);
+  const fill = core.floodFill(SQUARE, beads, '0,0');
+  assert.equal(fill.length, 8 * 8 - 1);
+  assert.ok(!fill.includes('4,4'));
+});
+
+test('floodFill: polar fill crosses arcs and radial alignment', () => {
+  // same-ring arc 2,0-2,1 plus 3,0 radially aligned below 2,0 (distance 1.0)
+  const beads = new Map([['2,0', 'black'], ['2,1', 'black'], ['3,0', 'black']]);
+  const fill = core.floodFill(POLAR, beads, '2,1');
+  assert.deepEqual(new Set(fill), new Set(['2,0', '2,1', '3,0']));
+});
+
+test('floodFill: polar fill does not leak across stagger-only contact', () => {
+  // 2,1 vs 3,1 sit ~1.087 apart: they fuse (lenient) but read as separated —
+  // the bucket must treat that gap as a boundary (strict reach only)
+  const beads = new Map([['2,1', 'black'], ['3,1', 'black']]);
+  assert.deepEqual(core.floodFill(POLAR, beads, '2,1'), ['2,1']);
+});
+
+test('floodFill: empty polar region inside a solid ring stays inside', () => {
+  // ring 2 fully beaded; filling empty from the center reaches rings 0-1 only
+  const beads = new Map(Array.from({ length: 12 }, (_, i) => ['2,' + i, 'black']));
+  const fill = core.floodFill(POLAR, beads, '0,0');
+  assert.deepEqual(new Set(fill), new Set(['0,0', '1,0', '1,1', '1,2', '1,3', '1,4', '1,5']));
+});
+
 /* ---------------- pegXY convention ---------------- */
 
 test('pegXY: polar index 0 sits at 12 o\'clock, indices go clockwise (y down)', () => {
