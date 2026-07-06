@@ -139,6 +139,28 @@ test('pegXY: polar index 0 sits at 12 o\'clock, indices go clockwise (y down)', 
   assert.ok(x3 > 0 && Math.abs(y3) < 1e-9, `quarter turn must point right (3 o'clock), got (${x3}, ${y3})`);
 });
 
+/* ---------------- share-link codec ---------------- */
+
+test('share codec: round-trips a full pattern payload', async () => {
+  const snowflake = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'examples', 'snowflake.json'), 'utf8'));
+  const payload = { v: 1, name: 'Snowflake ❄', pattern: snowflake };
+  const code = await core.encodeShare(payload);
+  assert.match(code, /^[gr][A-Za-z0-9_-]+$/, 'must be a URL-safe token');
+  assert.deepEqual(await core.decodeShare(code), payload);
+});
+
+test('share codec: compresses real patterns well below raw JSON size', async () => {
+  const snowflake = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'examples', 'snowflake.json'), 'utf8'));
+  const code = await core.encodeShare({ v: 1, name: 'x', pattern: snowflake });
+  assert.ok(code.length < JSON.stringify(snowflake).length / 2,
+    `expected compression, got ${code.length} chars`);
+});
+
+test('share codec: rejects garbage input', async () => {
+  await assert.rejects(() => core.decodeShare('x' + 'AAAA'), /unknown share-link format/);
+  await assert.rejects(() => core.decodeShare('g' + 'notgzipdata'));
+});
+
 /* ---------------- embed drift ---------------- */
 
 test('index.html embeds the current tools/core.js (run node tools/embed-core.js)', () => {

@@ -390,10 +390,43 @@ const PerlerCore = (() => {
     return { beads, islands: opts.dropIslands ? 0 : loose.length, droppedBeads };
   }
 
+  /* ---- Share-link codec ----
+     gzip + base64url of a JSON payload, for pattern-in-URL sharing
+     (#d=<code>). CompressionStream exists in modern browsers and node ≥18;
+     without it we fall back to uncompressed (flag prefix 'r' vs 'g'). */
+  const toB64u = bytes => {
+    let s = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  };
+  const fromB64u = str =>
+    Uint8Array.from(atob(str.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+
+  async function encodeShare(obj) {
+    const bytes = new TextEncoder().encode(JSON.stringify(obj));
+    if (typeof CompressionStream === 'undefined') return 'r' + toB64u(bytes);
+    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'));
+    return 'g' + toB64u(new Uint8Array(await new Response(stream).arrayBuffer()));
+  }
+
+  async function decodeShare(code) {
+    const flag = code[0];
+    let bytes = fromB64u(code.slice(1));
+    if (flag === 'g') {
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+      bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+    } else if (flag !== 'r') {
+      throw new Error('unknown share-link format');
+    }
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }
+
   return {
     SOLID_COLORS, STRIPED_COLORS, PALETTE, PAL, colorInfo,
     REACH_LENIENT, REACH_STRICT, pegXY, symCopies, expandBeads, connectivity,
-    patternJSON, quantizeImage,
+    patternJSON, quantizeImage, encodeShare, decodeShare,
   };
 })();
 

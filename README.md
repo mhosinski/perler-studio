@@ -56,6 +56,16 @@ bead assignments (JSON) ─┘        (zero AI in this step)
 3. **The renderer** converts `(ring, index)` to `(x, y)` with basic trig and draws
    donut-shaped beads as SVG. What you see is exactly what you build.
 
+## Sharing
+
+**Share** (Design panel, or ↗ in the phone top bar) turns the current design
+into a link with the entire pattern encoded in the URL fragment — no server, no
+account, nothing uploaded. On phones it opens the native share sheet with a
+rendered picture of the board attached, so texting a design shows the image
+plus a tappable link; elsewhere it copies the link. Opening a shared link saves
+the design into the recipient's own gallery (an identical already-saved design
+just opens), where it's fully editable like any other.
+
 ## The image workflow
 
 **From image** (Design panel) turns any picture into a pattern, entirely
