@@ -156,6 +156,18 @@
     }
     #jsonPanel textarea { height: 70px; }
   }
+  /* Phones: tighter chrome, board gets the space. The JSON box shrinks to a
+     peek strip and expands while focused. */
+  @media (max-width: 600px) {
+    aside { max-height: 38vh; padding: 10px 12px; }
+    aside h1 { font-size: 15px; }
+    section { padding: 9px 0; }
+    #savedList { max-height: 120px; }
+    #stage { padding: 8px; }
+    #jsonPanel { padding: 8px 10px; gap: 6px; }
+    #jsonPanel textarea { height: 42px; }
+    #jsonPanel:focus-within textarea { height: 30vh; }
+  }
 </style>
 </head>
 <body>
@@ -256,7 +268,7 @@
     <div id="counts"></div>
   </section>
 
-  <div class="note">Colors are screen approximations of Perler catalog colors. Mouse recommended for drag-painting.</div>
+  <div class="note">Colors are screen approximations of Perler catalog colors. Touch: two-finger drag pans/zooms the board, two-finger tap undoes, three-finger tap redoes.</div>
 </aside>
 
 <main>
@@ -766,6 +778,15 @@ function pegPositions() {
 const svg = document.getElementById('board');
 const NS = 'http://www.w3.org/2000/svg';
 
+// The visible viewBox: baseView fits the whole board; view (when set) is the
+// pinch-zoomed window into it. Kept across rebuilds of the same-size board so
+// undo/redo and theme toggles don't kick the user out of their zoom.
+let baseView = null, view = null;
+function applyView() {
+  const v = view || baseView;
+  svg.setAttribute('viewBox', `${v.x} ${v.y} ${v.w} ${v.h}`);
+}
+
 function buildBoard() {
   svg.innerHTML = '';
   pegEls.clear();
@@ -788,7 +809,11 @@ function buildBoard() {
     plate.setAttribute('stroke', T().plateLine);
     svg.appendChild(plate);
   }
-  svg.setAttribute('viewBox', `${-ex} ${-ey} ${2 * ex} ${2 * ey}`);
+  if (!baseView || baseView.w !== 2 * ex || baseView.h !== 2 * ey) {
+    baseView = { x: -ex, y: -ey, w: 2 * ex, h: 2 * ey };
+    view = null; // different board: any old zoom window is meaningless
+  }
+  applyView();
 
   for (const p of pegPositions()) {
     const g = document.createElementNS(NS, 'g');
@@ -942,11 +967,11 @@ window.addEventListener('keydown', e => {
 });
 
 /* ---------------- Touch gestures (Procreate-style) ---------------- */
-// Two-finger tap = undo, three-finger tap = redo. Touch only: pen and mouse
-// always paint. Clear-board deliberately has no gesture — destructive actions
-// stay behind the explicit button.
+// Two-finger tap = undo, three-finger tap = redo, two-finger DRAG = pan/zoom.
+// Touch only: pen and mouse always paint. Clear-board deliberately has no
+// gesture — destructive actions stay behind the explicit button.
 const stageEl = document.getElementById('stage');
-const gestureTouches = new Map(); // pointerId -> {x, y}
+const gestureTouches = new Map(); // pointerId -> {sx, sy, x, y} (start + current)
 let gestureStart = 0, gestureMax = 0, gestureVetoed = false;
 
 stageEl.addEventListener('pointerdown', e => {
@@ -959,7 +984,7 @@ stageEl.addEventListener('pointerdown', e => {
     gestureMax = 0;
     gestureVetoed = false;
   }
-  gestureTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  gestureTouches.set(e.pointerId, { sx: e.clientX, sy: e.clientY, x: e.clientX, y: e.clientY });
   gestureMax = Math.max(gestureMax, gestureTouches.size);
   // A second finger joining an active paint stroke means this was never a
   // paint: revert the accidental first-finger stroke before reading the tap.
@@ -977,8 +1002,48 @@ stageEl.addEventListener('pointerdown', e => {
 stageEl.addEventListener('pointermove', e => {
   if (e.pointerType !== 'touch') return;
   const t = gestureTouches.get(e.pointerId);
-  if (t && Math.hypot(e.clientX - t.x, e.clientY - t.y) > 24) gestureVetoed = true;
+  if (!t) return;
+  const px = t.x, py = t.y;
+  t.x = e.clientX; t.y = e.clientY;
+  if (Math.hypot(t.x - t.sx, t.y - t.sy) > 24) gestureVetoed = true;
+  // Exactly two fingers moving = pan/zoom. gestureMax check keeps a lifted
+  // third finger (redo tap in progress) from turning into a surprise pan.
+  if (gestureTouches.size === 2 && gestureMax === 2) {
+    const other = [...gestureTouches.values()].find(o => o !== t);
+    pinchUpdate({ x: px, y: py }, { x: t.x, y: t.y }, { x: other.x, y: other.y });
+  }
 });
+
+// One finger moved from prev to cur while anchor stayed put: zoom the view by
+// the distance ratio and pan by the midpoint shift, anchored so the board
+// point under the pinch midpoint stays under it. viewBox math assumes the
+// default preserveAspectRatio (xMidYMid meet); offsets are zoom-invariant
+// because viewBox aspect never changes.
+function pinchUpdate(prev, cur, anchor) {
+  const r = svg.getBoundingClientRect();
+  if (!r.width || !r.height || !baseView) return;
+  const v = view ? { ...view } : { ...baseView };
+  const s = Math.min(r.width / v.w, r.height / v.h);
+  const offX = (r.width - v.w * s) / 2, offY = (r.height - v.h * s) / 2;
+  const prevMid = { x: (prev.x + anchor.x) / 2, y: (prev.y + anchor.y) / 2 };
+  const newMid = { x: (cur.x + anchor.x) / 2, y: (cur.y + anchor.y) / 2 };
+  const bx = v.x + (prevMid.x - r.left - offX) / s;
+  const by = v.y + (prevMid.y - r.top - offY) / s;
+  const prevDist = Math.hypot(prev.x - anchor.x, prev.y - anchor.y);
+  const newDist = Math.hypot(cur.x - anchor.x, cur.y - anchor.y);
+  const k = prevDist > 12 && newDist > 12 ? newDist / prevDist : 1;
+  const newW = Math.max(baseView.w / 8, Math.min(baseView.w, v.w / k)); // clamp 1x..8x
+  const kEff = v.w / newW;
+  v.w = newW; v.h /= kEff;
+  const s2 = s * kEff;
+  v.x = bx - (newMid.x - r.left - offX) / s2;
+  v.y = by - (newMid.y - r.top - offY) / s2;
+  // keep the window's center on the board
+  v.x = Math.max(baseView.x - v.w / 2, Math.min(baseView.x + baseView.w - v.w / 2, v.x));
+  v.y = Math.max(baseView.y - v.h / 2, Math.min(baseView.y + baseView.h - v.h / 2, v.y));
+  view = v.w >= baseView.w * 0.98 ? null : v; // ~1x snaps back to the exact fit
+  applyView();
+}
 function gestureEnd(e) {
   if (e.pointerType !== 'touch') return;
   if (e.type === 'pointercancel') gestureVetoed = true;
@@ -1528,7 +1593,9 @@ function copyText(text, msg) {
 function svgMarkup() {
   const clone = svg.cloneNode(true);
   clone.setAttribute('xmlns', NS);
-  const vb = svg.getAttribute('viewBox').split(' ').map(Number);
+  // Export the whole board, not the current pinch-zoom window.
+  const vb = [baseView.x, baseView.y, baseView.w, baseView.h];
+  clone.setAttribute('viewBox', vb.join(' '));
   clone.setAttribute('width', 1000);
   clone.setAttribute('height', Math.round(1000 * vb[3] / vb[2]));
   const bg = document.createElementNS(NS, 'rect');

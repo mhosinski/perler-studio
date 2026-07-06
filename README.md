@@ -19,8 +19,11 @@ the bundled patterns from `examples/`. The ☾ button next to the title toggles 
 mode; it follows the system preference by default and remembers an explicit choice.
 
 On touch devices, Procreate-style gestures work over the board: **two-finger tap =
-undo, three-finger tap = redo**. Fingers and pencil paint; there is deliberately no
-clear-board gesture — destructive actions stay behind the explicit button.
+undo, three-finger tap = redo, two-finger drag = pan/zoom** (up to 8×, for
+peg-precise painting on small screens; pinch back out to snap to the full board).
+Fingers and pencil paint; there is deliberately no clear-board gesture —
+destructive actions stay behind the explicit button. Phone-width screens get a
+compact layout: the JSON panel shrinks to a peek strip and expands while focused.
 
 > Because the app runs over `file://`, it can't fetch `examples/*.json` at runtime —
 > the examples are embedded into `index.html` at build time. After adding or editing an
