@@ -134,6 +134,15 @@
   details { font-size: 12.5px; }
   details summary { cursor: pointer; color: var(--muted); }
   .note { font-size: 11.5px; color: var(--muted); margin-top: 10px; }
+  #importPanel {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+    z-index: 25; display: none;
+    background: var(--panel); border: 1px solid var(--line-strong);
+    border-radius: 10px; padding: 12px 14px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.25);
+    width: min(430px, calc(100vw - 24px));
+  }
+  #importPanel.open { display: block; }
   #toast {
     position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
     background: var(--ink); color: var(--bg); padding: 8px 16px; border-radius: 8px;
@@ -209,6 +218,7 @@
     aside #jsonPanel { border-top: 1px solid var(--line); padding: 12px 0 0; margin-top: 4px; }
     aside #jsonPanel textarea { height: 90px; }
     #toast { bottom: calc(72px + env(safe-area-inset-bottom)); }
+    #importPanel { bottom: calc(74px + env(safe-area-inset-bottom)); }
   }
 </style>
 </head>
@@ -344,6 +354,33 @@
   <div id="paletteSlot"></div>
 </div>
 <div id="drawerOverlay"></div>
+
+<!-- Import tuning: shown after picking an image; every change re-quantizes
+     the board live until Keep/Cancel -->
+<div id="importPanel">
+  <div class="row" style="justify-content:space-between">
+    <strong style="font-size:13px">Import options</strong>
+    <span class="note" id="ipStats" style="margin:0"></span>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <label>Colors <input type="range" id="ipColors" min="2" max="16" value="8" style="vertical-align:middle"> <span id="ipColorsVal">8</span></label>
+  </div>
+  <div class="row" style="margin-top:6px">
+    <label>Fit
+      <select id="ipFit">
+        <option value="contain">Fit (letterbox)</option>
+        <option value="cover">Fill (crop)</option>
+        <option value="stretch">Stretch</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="ipBg"> Remove background</label>
+    <label><input type="checkbox" id="ipIslands"> Drop islands</label>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button id="ipDone" class="primary">✓ Keep</button>
+    <button id="ipCancel">Cancel</button>
+  </div>
+</div>
 
 <div id="toast"></div>
 
@@ -611,46 +648,65 @@ const PerlerCore = (() => {
   }
 
   // Area-average each peg's image region in linear RGB with alpha weighting;
-  // mostly-transparent cells become empty pegs. The board's bounding box maps
-  // to the full frame (square) or the centered square (polar).
-  function samplePegs(img, board) {
+  // mostly-transparent cells become empty pegs. `fit` controls how the board's
+  // bounding box maps onto the image:
+  //   'contain' — preserve aspect, whole image visible; board cells beyond
+  //             the image get no beads (letterbox). Default for square boards.
+  //   'cover'   — preserve aspect, fill the whole board; image edges crop.
+  //             Default for polar boards (their historical behavior: the
+  //             centered min-square of the image fills the circle's bbox).
+  //   'stretch' — map edge-to-edge, aspect be damned.
+  // Cell area falling outside the image counts as transparent, so letterbox
+  // bands fall out of the alpha threshold naturally.
+  function samplePegs(img, board, fit) {
     const { width: W, height: H, pixels } = img;
+    let bw, bh;
+    if (board.type === 'square') { bw = board.width; bh = board.height; }
+    else { bw = bh = 2 * (board.rings.length - 0.5); }
+    const mode = fit || (board.type === 'square' ? 'contain' : 'cover');
+    let sx, sy; // image px per board unit
+    if (mode === 'stretch') { sx = W / bw; sy = H / bh; }
+    else if (mode === 'contain') { sx = sy = Math.max(W / bw, H / bh); }
+    else { sx = sy = Math.min(W / bw, H / bh); }
+    const ox = (W - bw * sx) / 2, oy = (H - bh * sy) / 2;
+
     const cells = [];
     if (board.type === 'square') {
       for (let r = 0; r < board.height; r++) for (let c = 0; c < board.width; c++) {
         cells.push({
           key: r + ',' + c,
-          x0: c * W / board.width, x1: (c + 1) * W / board.width,
-          y0: r * H / board.height, y1: (r + 1) * H / board.height,
+          x0: ox + c * sx, x1: ox + (c + 1) * sx,
+          y0: oy + r * sy, y1: oy + (r + 1) * sy,
         });
       }
     } else {
       const R = board.rings.length - 0.5;
-      const scale = Math.min(W, H) / (2 * R);
-      const cx = W / 2, cy = H / 2, half = scale / 2;
       board.rings.forEach((count, r) => {
         for (let i = 0; i < count; i++) {
           const key = r + ',' + i;
           const [px, py] = pegXY(board, key);
-          const x = cx + px * scale, y = cy + py * scale;
-          cells.push({ key, x0: x - half, x1: x + half, y0: y - half, y1: y + half });
+          const x = ox + (px + R) * sx, y = oy + (py + R) * sy;
+          cells.push({ key, x0: x - sx / 2, x1: x + sx / 2, y0: y - sy / 2, y1: y + sy / 2 });
         }
       });
     }
     const out = new Map();
     for (const cell of cells) {
-      const x0 = Math.max(0, Math.floor(cell.x0)), x1 = Math.min(W, Math.ceil(cell.x1));
-      const y0 = Math.max(0, Math.floor(cell.y0)), y1 = Math.min(H, Math.ceil(cell.y1));
-      let r = 0, g = 0, b = 0, a = 0, n = 0;
+      const fx0 = Math.floor(cell.x0), fx1 = Math.ceil(cell.x1);
+      const fy0 = Math.floor(cell.y0), fy1 = Math.ceil(cell.y1);
+      const nTotal = Math.max(0, fx1 - fx0) * Math.max(0, fy1 - fy0);
+      const x0 = Math.max(0, fx0), x1 = Math.min(W, fx1);
+      const y0 = Math.max(0, fy0), y1 = Math.min(H, fy1);
+      let r = 0, g = 0, b = 0, a = 0;
       for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
         const i = (y * W + x) * 4;
         const w = pixels[i + 3] / 255;
         r += srgbToLinear(pixels[i]) * w;
         g += srgbToLinear(pixels[i + 1]) * w;
         b += srgbToLinear(pixels[i + 2]) * w;
-        a += w; n++;
+        a += w;
       }
-      if (!n || a / n < 0.5) continue;
+      if (!nTotal || a / nTotal < 0.5) continue;
       out.set(cell.key, linearToLab(r / a, g / a, b / a));
     }
     return out;
@@ -658,12 +714,13 @@ const PerlerCore = (() => {
 
   // img: {width, height, pixels} with RGBA bytes (canvas ImageData works).
   // opts: colors (max clusters), bg ('none' | 'auto' | '#rrggbb'),
+  //       fit ('contain' | 'cover' | 'stretch', see samplePegs),
   //       sym ({fold, mirror}, polar orbit majority vote), dropIslands.
   // Returns { beads, islands, droppedBeads } — islands counts loose components
   // left in the result (always 0 with dropIslands).
   function quantizeImage(img, board, opts = {}) {
     const colors = Math.max(2, Math.min(24, opts.colors || 8));
-    const samples = samplePegs(img, board);
+    const samples = samplePegs(img, board, opts.fit);
     if (!samples.size) return { beads: new Map(), islands: 0, droppedBeads: 0 };
 
     let bgLab = null;
@@ -1361,6 +1418,10 @@ function switchTo(id, quiet = false) {
   const e = readStore()[id];
   if (!e) return false;
   if (!loadFromJSON(JSON.stringify(e.pattern), true)) return false;
+  // Navigating away from a live import-tuning session keeps its last state
+  if (importSession && importSession.designId && importSession.designId !== id) {
+    endImportSession(false);
+  }
   activeId = id;
   lsWrite(ACTIVE_KEY, id);
   // Undo history must not bleed across designs: with continuous save, undoing
@@ -1384,11 +1445,11 @@ function createDesign(name, pattern, quiet = false) {
   if (!quiet) toast(`Created "${name}"`);
 }
 
-function deleteDesign(id) {
+function deleteDesign(id, silent = false) {
   const s = readStore();
   const e = s[id];
   if (!e) return;
-  if (!confirm(`Delete "${e.name}"?`)) return;
+  if (!silent && !confirm(`Delete "${e.name}"?`)) return;
   delete s[id];
   writeStore(s);
   if (id === activeId) {
@@ -1591,6 +1652,10 @@ async function importFromHash() {
 }
 window.addEventListener('hashchange', importFromHash);
 
+// Importing opens a tuning session: the decoded pixels stay in memory and
+// every option change re-quantizes the board live until Keep/Cancel.
+let importSession = null; // { img, name, opts, designId }
+
 function importImagePixels(img, name) {
   // Opaque images get automatic background removal (otherwise a photo fills
   // every peg with mostly background); images with real transparency use the
@@ -1599,14 +1664,75 @@ function importImagePixels(img, name) {
   for (let i = 3; i < img.data.length; i += 4) {
     if (img.data[i] < 250) { opaque = false; break; }
   }
-  const res = PerlerCore.quantizeImage(
-    { width: img.width, height: img.height, pixels: img.data },
-    board, { colors: 8, bg: opaque ? 'auto' : 'none' });
-  if (!res.beads.size) { toast('No beads came out of that image'); return; }
+  importSession = {
+    img, name, designId: null,
+    opts: { colors: 8, bg: opaque ? 'auto' : 'none',
+            fit: board.type === 'square' ? 'contain' : 'cover', dropIslands: false },
+  };
+  const res = runImportPass();
+  if (!res.beads.size) {
+    importSession = null;
+    toast('No beads came out of that image');
+    return;
+  }
   createDesign(uniqueName(name), PerlerCore.patternJSON(board, res.beads), true);
-  toast(`Imported ${res.beads.size} beads` +
-    (res.islands ? ' — some loose islands, see the buildability warning' : ''));
+  importSession.designId = activeId;
+  openImportPanel();
 }
+
+function runImportPass() {
+  const s = importSession;
+  return PerlerCore.quantizeImage(
+    { width: s.img.width, height: s.img.height, pixels: s.img.data },
+    board, s.opts);
+}
+
+function rerunImport() {
+  const s = importSession;
+  if (!s || !s.designId) return;
+  const res = runImportPass();
+  beads = res.beads;
+  renderFills();
+  scheduleSync();
+  document.getElementById('ipStats').textContent =
+    `${res.beads.size} beads` + (res.islands ? ` · ${res.islands} loose island${res.islands > 1 ? 's' : ''}` : '');
+}
+
+function openImportPanel() {
+  const s = importSession;
+  document.getElementById('ipColors').value = s.opts.colors;
+  document.getElementById('ipColorsVal').textContent = s.opts.colors;
+  document.getElementById('ipFit').value = s.opts.fit;
+  document.getElementById('ipBg').checked = s.opts.bg === 'auto';
+  document.getElementById('ipIslands').checked = s.opts.dropIslands;
+  document.getElementById('importPanel').classList.add('open');
+  rerunImport();
+}
+
+function endImportSession(cancel) {
+  const s = importSession;
+  importSession = null;
+  document.getElementById('importPanel').classList.remove('open');
+  if (cancel && s && s.designId) deleteDesign(s.designId, true);
+}
+
+document.getElementById('ipColors').addEventListener('input', e => {
+  if (!importSession) return;
+  importSession.opts.colors = +e.target.value;
+  document.getElementById('ipColorsVal').textContent = e.target.value;
+  rerunImport();
+});
+document.getElementById('ipFit').addEventListener('change', e => {
+  if (importSession) { importSession.opts.fit = e.target.value; rerunImport(); }
+});
+document.getElementById('ipBg').addEventListener('change', e => {
+  if (importSession) { importSession.opts.bg = e.target.checked ? 'auto' : 'none'; rerunImport(); }
+});
+document.getElementById('ipIslands').addEventListener('change', e => {
+  if (importSession) { importSession.opts.dropIslands = e.target.checked; rerunImport(); }
+});
+document.getElementById('ipDone').addEventListener('click', () => endImportSession(false));
+document.getElementById('ipCancel').addEventListener('click', () => endImportSession(true));
 document.getElementById('btnDuplicate').addEventListener('click', () => {
   const e = readStore()[activeId];
   if (!e) return;

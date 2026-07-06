@@ -260,46 +260,65 @@ const PerlerCore = (() => {
   }
 
   // Area-average each peg's image region in linear RGB with alpha weighting;
-  // mostly-transparent cells become empty pegs. The board's bounding box maps
-  // to the full frame (square) or the centered square (polar).
-  function samplePegs(img, board) {
+  // mostly-transparent cells become empty pegs. `fit` controls how the board's
+  // bounding box maps onto the image:
+  //   'contain' — preserve aspect, whole image visible; board cells beyond
+  //             the image get no beads (letterbox). Default for square boards.
+  //   'cover'   — preserve aspect, fill the whole board; image edges crop.
+  //             Default for polar boards (their historical behavior: the
+  //             centered min-square of the image fills the circle's bbox).
+  //   'stretch' — map edge-to-edge, aspect be damned.
+  // Cell area falling outside the image counts as transparent, so letterbox
+  // bands fall out of the alpha threshold naturally.
+  function samplePegs(img, board, fit) {
     const { width: W, height: H, pixels } = img;
+    let bw, bh;
+    if (board.type === 'square') { bw = board.width; bh = board.height; }
+    else { bw = bh = 2 * (board.rings.length - 0.5); }
+    const mode = fit || (board.type === 'square' ? 'contain' : 'cover');
+    let sx, sy; // image px per board unit
+    if (mode === 'stretch') { sx = W / bw; sy = H / bh; }
+    else if (mode === 'contain') { sx = sy = Math.max(W / bw, H / bh); }
+    else { sx = sy = Math.min(W / bw, H / bh); }
+    const ox = (W - bw * sx) / 2, oy = (H - bh * sy) / 2;
+
     const cells = [];
     if (board.type === 'square') {
       for (let r = 0; r < board.height; r++) for (let c = 0; c < board.width; c++) {
         cells.push({
           key: r + ',' + c,
-          x0: c * W / board.width, x1: (c + 1) * W / board.width,
-          y0: r * H / board.height, y1: (r + 1) * H / board.height,
+          x0: ox + c * sx, x1: ox + (c + 1) * sx,
+          y0: oy + r * sy, y1: oy + (r + 1) * sy,
         });
       }
     } else {
       const R = board.rings.length - 0.5;
-      const scale = Math.min(W, H) / (2 * R);
-      const cx = W / 2, cy = H / 2, half = scale / 2;
       board.rings.forEach((count, r) => {
         for (let i = 0; i < count; i++) {
           const key = r + ',' + i;
           const [px, py] = pegXY(board, key);
-          const x = cx + px * scale, y = cy + py * scale;
-          cells.push({ key, x0: x - half, x1: x + half, y0: y - half, y1: y + half });
+          const x = ox + (px + R) * sx, y = oy + (py + R) * sy;
+          cells.push({ key, x0: x - sx / 2, x1: x + sx / 2, y0: y - sy / 2, y1: y + sy / 2 });
         }
       });
     }
     const out = new Map();
     for (const cell of cells) {
-      const x0 = Math.max(0, Math.floor(cell.x0)), x1 = Math.min(W, Math.ceil(cell.x1));
-      const y0 = Math.max(0, Math.floor(cell.y0)), y1 = Math.min(H, Math.ceil(cell.y1));
-      let r = 0, g = 0, b = 0, a = 0, n = 0;
+      const fx0 = Math.floor(cell.x0), fx1 = Math.ceil(cell.x1);
+      const fy0 = Math.floor(cell.y0), fy1 = Math.ceil(cell.y1);
+      const nTotal = Math.max(0, fx1 - fx0) * Math.max(0, fy1 - fy0);
+      const x0 = Math.max(0, fx0), x1 = Math.min(W, fx1);
+      const y0 = Math.max(0, fy0), y1 = Math.min(H, fy1);
+      let r = 0, g = 0, b = 0, a = 0;
       for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
         const i = (y * W + x) * 4;
         const w = pixels[i + 3] / 255;
         r += srgbToLinear(pixels[i]) * w;
         g += srgbToLinear(pixels[i + 1]) * w;
         b += srgbToLinear(pixels[i + 2]) * w;
-        a += w; n++;
+        a += w;
       }
-      if (!n || a / n < 0.5) continue;
+      if (!nTotal || a / nTotal < 0.5) continue;
       out.set(cell.key, linearToLab(r / a, g / a, b / a));
     }
     return out;
@@ -307,12 +326,13 @@ const PerlerCore = (() => {
 
   // img: {width, height, pixels} with RGBA bytes (canvas ImageData works).
   // opts: colors (max clusters), bg ('none' | 'auto' | '#rrggbb'),
+  //       fit ('contain' | 'cover' | 'stretch', see samplePegs),
   //       sym ({fold, mirror}, polar orbit majority vote), dropIslands.
   // Returns { beads, islands, droppedBeads } — islands counts loose components
   // left in the result (always 0 with dropIslands).
   function quantizeImage(img, board, opts = {}) {
     const colors = Math.max(2, Math.min(24, opts.colors || 8));
-    const samples = samplePegs(img, board);
+    const samples = samplePegs(img, board, opts.fit);
     if (!samples.size) return { beads: new Map(), islands: 0, droppedBeads: 0 };
 
     let bgLab = null;

@@ -11,6 +11,9 @@
 //                                  majority-voting each symmetry orbit
 //   --bg auto | #rrggbb | none     treat this color as empty pegs (default
 //                                  none; transparent pixels are always empty)
+//   --fit contain | cover | stretch  how the image maps to the board (default
+//                                  contain: preserve aspect, letterbox with
+//                                  empty pegs; cover crops; stretch distorts)
 //   --drop-islands                 keep only the largest connected component
 //   --out file.json                write pattern JSON (default: stdout)
 //
@@ -42,6 +45,10 @@ const bg = opt('bg', 'none');
 if (bg !== 'none' && bg !== 'auto' && !/^#[0-9a-f]{6}$/i.test(bg)) {
   console.error(`bad --bg "${bg}" (auto, #rrggbb, or none)`); process.exit(1);
 }
+const fit = opt('fit', null);
+if (fit && !['contain', 'cover', 'stretch'].includes(fit)) {
+  console.error(`bad --fit "${fit}" (contain, cover, or stretch)`); process.exit(1);
+}
 let sym = null;
 {
   const s = opt('sym', null);
@@ -56,7 +63,7 @@ let sym = null;
 const img = png.decode(fs.readFileSync(file));
 const { beads, islands, droppedBeads } = core.quantizeImage(img, board, {
   colors: +opt('colors', 8) || 8,
-  bg, sym,
+  bg, sym, fit,
   dropIslands: args.includes('--drop-islands'),
 });
 if (!beads.size) { console.error('nothing to quantize — image fully transparent or all background'); process.exit(1); }

@@ -71,8 +71,12 @@ just opens), where it's fully editable like any other.
 **From image** (Design panel) turns any picture into a pattern, entirely
 in-browser: pick an image (PNG/JPEG/WebP — on phones this opens the photo
 picker or camera) and it is quantized onto the **current board** as a new
-design. Transparent backgrounds become empty pegs; opaque images get automatic
-background removal. The quantizer is deterministic — no AI, no upload, nothing
+design. An **Import options** panel then re-quantizes live as you tune: color
+count, background removal, island dropping, and **fit** — *Fit* preserves the
+image's aspect ratio and letterboxes with empty pegs (square-board default),
+*Fill* crops the image edges to cover every peg (circle-board default),
+*Stretch* maps edge-to-edge. Transparent backgrounds become empty pegs; opaque
+images get automatic background removal. The quantizer is deterministic — no AI, no upload, nothing
 leaves the browser — so it pairs naturally with any image generator: make a
 flat-color, bold-shape, sticker-style image in whatever tool you like, then
 import it. `tools/quantize.js` is the same pipeline as a CLI for scripted use,
@@ -200,7 +204,8 @@ Dependency-free node scripts in `tools/`, extracted from the design-iteration lo
   no install needed): symmetry orbits, connectivity fixtures at both contact
   thresholds, bead-expansion validation, and the embed-drift check.
 - `node tools/quantize.js <image.png> [--board square:WxH|polar:N] [--colors N]
-  [--sym F[,mirror]] [--bg auto|#hex] [--drop-islands] [--out file.json]` — the
+  [--fit contain|cover|stretch] [--sym F[,mirror]] [--bg auto|#hex]
+  [--drop-islands] [--out file.json]` — the
   **image → pattern pipeline**: area-averages the image onto the peg grid,
   k-means the sampled colors down in CIELAB space, then maps each cluster to the
   nearest catalog color. No dithering (dither noise reads as random beads), no

@@ -192,6 +192,43 @@ test('quantize: polar sampling preserves image orientation (top of image = 12 o\
   assert.equal(at(3, 9), 'black', 'bottom of image must land at 6 o\'clock');
 });
 
+test('fit=contain (square default): wide images letterbox instead of squashing', () => {
+  // 2:1 solid red image onto an 8x8 board -> middle 4 rows beaded, 2 empty
+  // rows top and bottom, no distortion
+  const rows = ['rrrr', 'rrrr'];
+  const img = imageFrom(rows, { r: [220, 40, 40] }, 32); // 128x64
+  const p = runQuantize(img, ['--board', 'square:8x8']);
+  const rowsUsed = new Set(p.beads.map(b => b.row));
+  assert.deepEqual([...rowsUsed].sort(), [2, 3, 4, 5]);
+  assert.equal(p.beads.length, 32, 'the 4 middle rows fill fully');
+});
+
+test('fit=cover: wide images crop their sides and fill the board', () => {
+  // left third red, middle third black, right third white; cover on a square
+  // board keeps the middle and crops into the outer thirds
+  const rows = ['rrrrrrkkkkkkwwwwww'];
+  const img = imageFrom(rows, { r: [220, 40, 40], k: [43, 43, 43], w: [253, 253, 252] }, 16); // 288x16
+  const p = runQuantize(img, ['--board', 'square:6x6', '--fit', 'cover']);
+  assert.equal(p.beads.length, 36, 'cover fills every peg');
+  const middle = p.beads.filter(b => b.col >= 2 && b.col <= 3);
+  assert.ok(middle.every(b => b.color === 'black'), 'image center survives the crop');
+});
+
+test('fit=stretch: preserves the old edge-to-edge mapping', () => {
+  const rows = ['rrrrrrrrrrrrrrrr', 'rrrrrrrrrrrrrrrr'];
+  const img = imageFrom(rows, { r: [220, 40, 40] }, 16);
+  const p = runQuantize(img, ['--board', 'square:8x8', '--fit', 'stretch']);
+  assert.equal(p.beads.length, 64, 'stretch fills the whole board');
+});
+
+test('fit: polar boards default to cover (historical center-crop behavior)', () => {
+  // solid blue landscape image: cover fills the disc completely
+  const rows = ['bbbbbbbbbbbb', 'bbbbbbbbbbbb', 'bbbbbbbbbbbb'];
+  const img = imageFrom(rows, { b: [47, 95, 165] }, 16); // 192x48
+  const p = runQuantize(img, ['--board', 'polar:3']);
+  assert.equal(p.beads.length, 1 + 6 + 12, 'every peg beaded');
+});
+
 test('quantize: output passes expandBeads validation cleanly', () => {
   const rows = ['rr', 'rr'];
   const p = runQuantize(imageFrom(rows, { r: [220, 40, 40] }), ['--board', 'square:2x2']);
