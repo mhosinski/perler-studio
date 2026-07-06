@@ -47,6 +47,18 @@ bead assignments (JSON) ─┘        (zero AI in this step)
 3. **The renderer** converts `(ring, index)` to `(x, y)` with basic trig and draws
    donut-shaped beads as SVG. What you see is exactly what you build.
 
+## The image workflow
+
+**From image** (Design panel) turns any picture into a pattern, entirely
+in-browser: pick an image (PNG/JPEG/WebP — on phones this opens the photo
+picker or camera) and it is quantized onto the **current board** as a new
+design. Transparent backgrounds become empty pegs; opaque images get automatic
+background removal. The quantizer is deterministic — no AI, no upload, nothing
+leaves the browser — so it pairs naturally with any image generator: make a
+flat-color, bold-shape, sticker-style image in whatever tool you like, then
+import it. `tools/quantize.js` is the same pipeline as a CLI for scripted use,
+with extra knobs (`--colors`, `--sym`, `--bg`, `--drop-islands`).
+
 ## The LLM workflow
 
 1. Set up your board (type, ring count) and click **Copy LLM prompt**. This generates

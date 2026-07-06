@@ -183,9 +183,215 @@ const PerlerCore = (() => {
     return { keys, lenient: components(near), strict: components(strong) };
   }
 
+  /* ---- Pattern JSON (canonical export shape) ---- */
+  function patternJSON(board, beads) {
+    const arr = [];
+    for (const [key, color] of beads) {
+      const [a, b] = key.split(',').map(Number);
+      arr.push(board.type === 'polar'
+        ? { ring: a, index: b, color }
+        : { row: a, col: b, color });
+    }
+    arr.sort((p, q) => (p.ring ?? p.row) - (q.ring ?? q.row) || (p.index ?? p.col) - (q.index ?? q.col));
+    const b = board.type === 'polar'
+      ? { type: 'polar', name: board.name || 'circle', rings: board.rings }
+      : { type: 'square', name: board.name || 'square', width: board.width, height: board.height };
+    return { version: 1, board: b, beads: arr };
+  }
+
+  /* ---- Image quantization ----
+     Shared by the app's "Import image" (canvas pixels) and tools/quantize.js
+     (png.js pixels). Pure math — no fs, no canvas, no DOM. */
+
+  // sRGB <-> linear <-> CIELAB (D65)
+  const srgbToLinear = v => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  function linearToLab(r, g, b) {
+    const x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047;
+    const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883;
+    const f = t => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+    const fx = f(x), fy = f(y), fz = f(z);
+    return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+  }
+  const hexToLab = hex => linearToLab(
+    srgbToLinear(parseInt(hex.slice(1, 3), 16)),
+    srgbToLinear(parseInt(hex.slice(3, 5), 16)),
+    srgbToLinear(parseInt(hex.slice(5, 7), 16)));
+  const labDist2 = (a, b) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+
+  // Deterministic k-means in Lab: k-means++ seeding via a fixed LCG, so the
+  // same image always quantizes to the same pattern.
+  function kmeans(points, k) {
+    if (points.length <= k) return points.map(p => p.slice());
+    let seed = 42;
+    const rand = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+    const centers = [points[0].slice()];
+    while (centers.length < k) {
+      const d = points.map(p => Math.min(...centers.map(c => labDist2(p, c))));
+      const total = d.reduce((s, v) => s + v, 0);
+      if (total === 0) break;
+      let t = rand() * total, i = 0;
+      while (t > d[i]) t -= d[i++];
+      centers.push(points[Math.min(i, points.length - 1)].slice());
+    }
+    for (let iter = 0; iter < 32; iter++) {
+      const sums = centers.map(() => [0, 0, 0, 0]);
+      for (const p of points) {
+        let bi = 0, bd = Infinity;
+        for (let c = 0; c < centers.length; c++) {
+          const d = labDist2(p, centers[c]);
+          if (d < bd) { bd = d; bi = c; }
+        }
+        const s = sums[bi];
+        s[0] += p[0]; s[1] += p[1]; s[2] += p[2]; s[3]++;
+      }
+      let moved = 0;
+      for (let c = 0; c < centers.length; c++) {
+        if (!sums[c][3]) continue;
+        const nc = [sums[c][0] / sums[c][3], sums[c][1] / sums[c][3], sums[c][2] / sums[c][3]];
+        moved += labDist2(nc, centers[c]);
+        centers[c] = nc;
+      }
+      if (moved < 1e-6) break;
+    }
+    return centers;
+  }
+
+  // Area-average each peg's image region in linear RGB with alpha weighting;
+  // mostly-transparent cells become empty pegs. The board's bounding box maps
+  // to the full frame (square) or the centered square (polar).
+  function samplePegs(img, board) {
+    const { width: W, height: H, pixels } = img;
+    const cells = [];
+    if (board.type === 'square') {
+      for (let r = 0; r < board.height; r++) for (let c = 0; c < board.width; c++) {
+        cells.push({
+          key: r + ',' + c,
+          x0: c * W / board.width, x1: (c + 1) * W / board.width,
+          y0: r * H / board.height, y1: (r + 1) * H / board.height,
+        });
+      }
+    } else {
+      const R = board.rings.length - 0.5;
+      const scale = Math.min(W, H) / (2 * R);
+      const cx = W / 2, cy = H / 2, half = scale / 2;
+      board.rings.forEach((count, r) => {
+        for (let i = 0; i < count; i++) {
+          const key = r + ',' + i;
+          const [px, py] = pegXY(board, key);
+          const x = cx + px * scale, y = cy + py * scale;
+          cells.push({ key, x0: x - half, x1: x + half, y0: y - half, y1: y + half });
+        }
+      });
+    }
+    const out = new Map();
+    for (const cell of cells) {
+      const x0 = Math.max(0, Math.floor(cell.x0)), x1 = Math.min(W, Math.ceil(cell.x1));
+      const y0 = Math.max(0, Math.floor(cell.y0)), y1 = Math.min(H, Math.ceil(cell.y1));
+      let r = 0, g = 0, b = 0, a = 0, n = 0;
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+        const i = (y * W + x) * 4;
+        const w = pixels[i + 3] / 255;
+        r += srgbToLinear(pixels[i]) * w;
+        g += srgbToLinear(pixels[i + 1]) * w;
+        b += srgbToLinear(pixels[i + 2]) * w;
+        a += w; n++;
+      }
+      if (!n || a / n < 0.5) continue;
+      out.set(cell.key, linearToLab(r / a, g / a, b / a));
+    }
+    return out;
+  }
+
+  // img: {width, height, pixels} with RGBA bytes (canvas ImageData works).
+  // opts: colors (max clusters), bg ('none' | 'auto' | '#rrggbb'),
+  //       sym ({fold, mirror}, polar orbit majority vote), dropIslands.
+  // Returns { beads, islands, droppedBeads } — islands counts loose components
+  // left in the result (always 0 with dropIslands).
+  function quantizeImage(img, board, opts = {}) {
+    const colors = Math.max(2, Math.min(24, opts.colors || 8));
+    const samples = samplePegs(img, board);
+    if (!samples.size) return { beads: new Map(), islands: 0, droppedBeads: 0 };
+
+    let bgLab = null;
+    if (opts.bg === 'auto') {
+      const { width: W, height: H, pixels } = img;
+      let r = 0, g = 0, b = 0;
+      for (const [x, y] of [[0, 0], [W - 1, 0], [0, H - 1], [W - 1, H - 1]]) {
+        const i = (y * W + x) * 4;
+        r += srgbToLinear(pixels[i]); g += srgbToLinear(pixels[i + 1]); b += srgbToLinear(pixels[i + 2]);
+      }
+      bgLab = linearToLab(r / 4, g / 4, b / 4);
+    } else if (/^#[0-9a-f]{6}$/i.test(opts.bg || '')) {
+      bgLab = hexToLab(opts.bg);
+    }
+
+    // k-means first, then snap each cluster to the nearest solid catalog
+    // color (striped beads are never auto-assigned). No dithering: dither
+    // noise reads as random beads on a pegboard.
+    const centers = kmeans([...samples.values()], colors);
+    const catalog = SOLID_COLORS.map(([id, , hex]) => ({ id, lab: hexToLab(hex) }));
+    const clusterColor = centers.map(c => {
+      let best = null, bd = Infinity;
+      for (const cat of catalog) {
+        const d = labDist2(c, cat.lab);
+        if (d < bd) { bd = d; best = cat.id; }
+      }
+      return best;
+    });
+    const bgCluster = bgLab === null ? -1
+      : centers.reduce((bi, c, i) => labDist2(c, bgLab) < labDist2(centers[bi], bgLab) ? i : bi, 0);
+
+    let beads = new Map();
+    for (const [key, lab] of samples) {
+      let bi = 0, bd = Infinity;
+      for (let c = 0; c < centers.length; c++) {
+        const d = labDist2(lab, centers[c]);
+        if (d < bd) { bd = d; bi = c; }
+      }
+      if (bi === bgCluster) continue;
+      beads.set(key, clusterColor[bi]);
+    }
+
+    // Polar symmetry: majority-vote each orbit (deterministic tie-break by
+    // first occurrence; mostly-empty orbits stay empty).
+    const sym = opts.sym;
+    if (sym && (sym.fold > 1 || sym.mirror)) {
+      const done = new Set();
+      const voted = new Map();
+      for (const key of beads.keys()) {
+        if (done.has(key)) continue;
+        const orbit = symCopies(board, key, sym);
+        const tally = new Map();
+        let filled = 0;
+        for (const k of orbit) {
+          done.add(k);
+          const c = beads.get(k);
+          if (!c) continue;
+          filled++;
+          tally.set(c, (tally.get(c) || 0) + 1);
+        }
+        if (filled <= orbit.length / 2) continue;
+        let win = null, wn = 0;
+        for (const [c, n] of tally) if (n > wn) { win = c; wn = n; }
+        for (const k of orbit) voted.set(k, win);
+      }
+      beads = voted;
+    }
+
+    const conn = connectivity(board, [...beads.keys()]);
+    const loose = conn.lenient.slice(1);
+    let droppedBeads = 0;
+    if (opts.dropIslands) {
+      for (const comp of loose) for (const i of comp) { beads.delete(conn.keys[i]); droppedBeads++; }
+    }
+    return { beads, islands: opts.dropIslands ? 0 : loose.length, droppedBeads };
+  }
+
   return {
     SOLID_COLORS, STRIPED_COLORS, PALETTE, PAL, colorInfo,
     REACH_LENIENT, REACH_STRICT, pegXY, symCopies, expandBeads, connectivity,
+    patternJSON, quantizeImage,
   };
 })();
 

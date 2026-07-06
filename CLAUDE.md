@@ -96,9 +96,11 @@ imagery of beads, ever.
   Procreate-style touch gestures, a live fused-connectivity ("holds together")
   check, and a Procreate-style gallery: designs persist continuously to
   `localStorage` (v2 id-keyed store); there is no Save button.
-- **`tools/core.js`** — the shared pattern core: symmetry expansion,
-  bead-list expansion/validation, and the fused-connectivity model
-  (contact constants 1.15/1.06). Single source of truth: embedded into
+- **`tools/core.js`** — the shared pattern core: the color catalog, symmetry
+  expansion, bead-list expansion/validation, the fused-connectivity model
+  (contact constants 1.15/1.06), canonical pattern JSON, and the image
+  quantization pipeline (`quantizeImage`, used by both the app's "From image"
+  button and tools/quantize.js). Single source of truth: embedded into
   `index.html` between `CORE:BEGIN/END` markers (run `node
   tools/embed-core.js` after editing — a test fails on drift) and
   `require()`'d by the node tools. Edit the logic HERE, never in the

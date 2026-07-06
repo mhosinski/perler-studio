@@ -148,6 +148,34 @@ test('quantize: polar --sym majority-votes orbits into exact symmetry', () => {
   }
 });
 
+test('core.quantizeImage: callable directly with raw RGBA (the app path, no CLI)', () => {
+  // 2x1 image: red pixel, transparent pixel -> 2x1 board
+  const pixels = Buffer.from([220, 40, 40, 255, 0, 0, 0, 0]);
+  const board = { type: 'square', name: 'square-2x1', width: 2, height: 1 };
+  const { beads, islands } = core.quantizeImage({ width: 2, height: 1, pixels }, board, { colors: 4 });
+  assert.deepEqual([...beads.entries()], [['0,0', 'red']]);
+  assert.equal(islands, 0);
+});
+
+test('core.quantizeImage: CLI and direct call produce identical patterns', () => {
+  const rows = ['rgb.', 'gbr.', 'brg.', '....'];
+  const img = imageFrom(rows, { r: [220, 40, 40], g: [30, 150, 80], b: [40, 90, 170] });
+  const viaCli = runQuantize(img, ['--board', 'square:4x4']);
+  const decoded = png.decode(img);
+  const board = { type: 'square', name: 'square-4x4', width: 4, height: 4 };
+  const direct = core.patternJSON(board, core.quantizeImage(decoded, board, { colors: 8, bg: 'none' }).beads);
+  assert.deepEqual(direct, viaCli);
+});
+
+test('core.patternJSON: sorted, versioned, board normalized', () => {
+  const board = { type: 'square', width: 3, height: 3 }; // no name
+  const beads = new Map([['2,1', 'red'], ['0,2', 'blue'], ['0,0', 'red']]);
+  const p = core.patternJSON(board, beads);
+  assert.equal(p.version, 1);
+  assert.equal(p.board.name, 'square');
+  assert.deepEqual(p.beads.map(b => `${b.row},${b.col}`), ['0,0', '0,2', '2,1']);
+});
+
 test('quantize: output passes expandBeads validation cleanly', () => {
   const rows = ['rr', 'rr'];
   const p = runQuantize(imageFrom(rows, { r: [220, 40, 40] }), ['--board', 'square:2x2']);
