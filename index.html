@@ -207,7 +207,7 @@
       background: var(--panel); border-top: 1px solid var(--line);
       min-width: 0;
     }
-    #bottomBar #btnEraseMobile, #bottomBar #btnBucketMobile {
+    #bottomBar #btnEraseMobile, #bottomBar #btnBucketMobile, #bottomBar #btnPickMobile {
       flex: none; width: 40px; height: 40px; border-radius: 50%;
       padding: 0; font-size: 17px;
     }
@@ -264,6 +264,7 @@
     <div class="row">
       <button id="toolPaint" class="active">🖌 Paint</button>
       <button id="toolBucket" title="Fill a contiguous region with the selected color">🪣 Fill</button>
+      <button id="toolPick" title="Pick a color from a bead on the board">💧 Pick</button>
       <button id="toolErase">⌫ Erase</button>
       <button id="btnUndo" title="Cmd/Ctrl+Z">↩ Undo</button>
       <button id="btnRedo" title="Cmd/Ctrl+Shift+Z">↪ Redo</button>
@@ -357,6 +358,7 @@
 <div id="bottomBar">
   <button id="btnEraseMobile" title="Erase">⌫</button>
   <button id="btnBucketMobile" title="Fill">🪣</button>
+  <button id="btnPickMobile" title="Pick color">💧</button>
   <div id="paletteSlot"></div>
 </div>
 <div id="drawerOverlay"></div>
@@ -1152,6 +1154,7 @@ function applyAt(key, erase) {
 }
 
 let dragging = false, strokeErase = false, strokeBucket = false, strokePrev = null, strokePointer = null;
+let strokePick = false, strokePickKey = null, toolBeforePick = 'paint';
 svg.addEventListener('pointerdown', e => {
   const t = e.target.closest('[data-key]');
   if (!t) return;
@@ -1160,9 +1163,18 @@ svg.addEventListener('pointerdown', e => {
   // (undo/redo taps), never the start of a paint stroke.
   if (e.pointerType === 'touch' && gestureTouches.size > 0) return;
   e.preventDefault();
-  strokePrev = stateNow();
   strokePointer = e.pointerId;
   dragging = true;
+  strokePick = tool === 'pick';
+  if (strokePick) {
+    // Eyedropper: nothing changes until the finger lifts. Applying at
+    // pointerup keeps the pick out of the two-finger-undo race entirely
+    // (the veto kills the stroke before endStroke runs) and lets a drag
+    // refine which bead is picked before committing.
+    strokePickKey = t.dataset.key;
+    return;
+  }
+  strokePrev = stateNow();
   strokeBucket = tool === 'bucket';
   strokeErase = tool === 'erase' || e.button === 2;
   // Tapping a bead that already has the selected color toggles it off — for
@@ -1195,7 +1207,9 @@ svg.addEventListener('pointermove', e => {
   e.preventDefault();
   const el = document.elementFromPoint(e.clientX, e.clientY);
   const t = el && el.closest('[data-key]');
-  if (t) applyAt(t.dataset.key, strokeErase);
+  if (!t) return;
+  if (strokePick) strokePickKey = t.dataset.key; // drag refines the pick
+  else applyAt(t.dataset.key, strokeErase);
 });
 // Commit the stroke to the undo stack only if it actually changed something,
 // so painting a bead with its existing color stays a no-op for undo.
@@ -1204,6 +1218,12 @@ function endStroke(e) {
   if (e && e.pointerId !== strokePointer) return; // another finger lifting
   dragging = false;
   strokePointer = null;
+  if (strokePick) {
+    strokePick = false;
+    const c = beads.get(strokePickKey);
+    if (c) applyPick(c); // an empty peg picks nothing: stay in eyedropper
+    return;
+  }
   if (strokePrev) { commitUndo(strokePrev); strokePrev = null; }
 }
 window.addEventListener('pointerup', endStroke);
@@ -2074,28 +2094,61 @@ function buildPalette() {
     if (p.id === curColor) btn.classList.add('sel');
     btn.addEventListener('click', () => {
       curColor = p.id;
-      // Picking a color implies applying it: leave erase, but keep the
-      // bucket active — "select fill, pick a color, tap the region" must
-      // not lose the tool between steps.
+      // Choosing a color implies applying it: leave erase (and resolve an
+      // active eyedropper), but keep the bucket — "select fill, pick a
+      // color, tap the region" must not lose the tool between steps.
       if (tool === 'erase') tool = 'paint';
+      else if (tool === 'pick') { snapBackFromPick(); }
       setToolButtons();
       el.querySelectorAll('button').forEach(b => b.classList.toggle('sel', b.dataset.id === p.id));
       document.getElementById('curColor').textContent = 'Selected: ' + p.name;
     });
     el.appendChild(btn);
   }
-  document.getElementById('curColor').textContent = 'Selected: ' + PAL[curColor].name;
+  // curColor can be a raw hex picked off an imported bead — no PAL entry
+  const cur = PerlerCore.colorInfo(curColor);
+  document.getElementById('curColor').textContent = 'Selected: ' + (cur ? cur.name : curColor);
 }
 
 function setToolButtons() {
   document.getElementById('toolPaint').classList.toggle('active', tool === 'paint');
   document.getElementById('toolBucket').classList.toggle('active', tool === 'bucket');
+  document.getElementById('toolPick').classList.toggle('active', tool === 'pick');
   document.getElementById('toolErase').classList.toggle('active', tool === 'erase');
   document.getElementById('btnEraseMobile').classList.toggle('active', tool === 'erase');
   document.getElementById('btnBucketMobile').classList.toggle('active', tool === 'bucket');
+  document.getElementById('btnPickMobile').classList.toggle('active', tool === 'pick');
 }
+
+// Choosing a color — by eyedropper or palette tap — means you're about to
+// apply it: snap back to the tool in use before the pick (Procreate-style),
+// except erase, which would discard the color you just chose.
+function snapBackFromPick() {
+  tool = toolBeforePick === 'erase' ? 'paint' : toolBeforePick;
+  setToolButtons();
+}
+function applyPick(c) {
+  curColor = c;
+  const info = PerlerCore.colorInfo(c);
+  const name = info ? info.name : c;
+  document.getElementById('curColor').textContent = 'Selected: ' + name;
+  document.querySelectorAll('#palette button')
+    .forEach(b => b.classList.toggle('sel', b.dataset.id === c));
+  if (phoneMq.matches) {
+    document.querySelector('#palette .sel')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+  }
+  toast('Picked ' + name);
+  snapBackFromPick();
+}
+function enterPick() {
+  if (tool !== 'pick') toolBeforePick = tool;
+  tool = 'pick';
+  setToolButtons();
+}
+
 document.getElementById('toolPaint').addEventListener('click', () => { tool = 'paint'; setToolButtons(); });
 document.getElementById('toolBucket').addEventListener('click', () => { tool = 'bucket'; setToolButtons(); });
+document.getElementById('toolPick').addEventListener('click', enterPick);
 document.getElementById('toolErase').addEventListener('click', () => { tool = 'erase'; setToolButtons(); });
 document.getElementById('btnUndo').addEventListener('click', undo);
 document.getElementById('btnRedo').addEventListener('click', redo);
@@ -2133,6 +2186,11 @@ document.getElementById('btnEraseMobile').addEventListener('click', () => {
 document.getElementById('btnBucketMobile').addEventListener('click', () => {
   tool = tool === 'bucket' ? 'paint' : 'bucket';
   setToolButtons();
+});
+document.getElementById('btnPickMobile').addEventListener('click', () => {
+  // tapping the active eyedropper cancels it back to the prior tool
+  if (tool === 'pick') { tool = toolBeforePick; setToolButtons(); }
+  else enterPick();
 });
 
 document.getElementById('btnClear').addEventListener('click', () => {

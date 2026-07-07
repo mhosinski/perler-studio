@@ -34,6 +34,13 @@ it. Fills respect the active symmetry, land as a single undo step, and never
 cross gaps the renderer draws as visually separated (an unbounded empty tap
 fills the whole board, as buckets do).
 
+The 💧 **Pick** eyedropper grabs a color straight off the board: tap it, then
+tap (or drag to, then release on) any bead — that bead's color becomes the
+selected color and the tool snaps back to whatever you were using,
+Procreate-style, so picking a color never interrupts the painting flow.
+Picking from an empty peg does nothing; picking while Erase was active
+returns to Paint.
+
 Phone-width screens get a board-first layout: a slim top bar (menu, design name,
 undo/redo), the palette as a thumb-reachable strip along the bottom with an
 erase toggle, and everything else — designs, board setup, symmetry, bead counts,
