@@ -31,3 +31,6 @@ if command -v bd >/dev/null 2>&1; then
   if [ $_bd_exit -ne 0 ]; then exit $_bd_exit; fi
 fi
 # --- END BEADS INTEGRATION v1.0.5 ---
+
+# ai-toolkit/project-seed secret scan — appended by install-hooks.sh; re-run to verify.
+gitleaks git --pre-commit --staged --redact -v --no-banner --log-level warn || { echo "pre-commit: gitleaks flagged a staged secret (see above). Remove it, or for a false positive add the printed Fingerprint to .gitleaksignore." >&2; exit 1; }

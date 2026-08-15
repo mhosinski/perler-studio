@@ -5,3 +5,19 @@
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# --- seed baseline: secret carriers and local state (ai-toolkit/project-seed) ---
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.jwk
+.access-key
+.*-key
+.*-token
+.envrc
+.direnv/
+beads-snapshot*.jsonl
