@@ -31,13 +31,19 @@ links.
   GitHub Pages sees the path only. A PNG of the board may go along through
   the native share sheet, at the sender's choice.
 - **The repo — public.** `github.com/mhosinski/perler-studio` is public
-  (MIT). Everything committed is world-readable, and that includes the
-  tracked beads files (`.beads/config.yaml`, `.beads/interactions.jsonl`,
-  `.beads/hooks/*`) **and the beads database itself**, which `bd dolt push`
-  publishes to `refs/dolt/data` on the same remote: issues, notes, memories
-  and the `handoff-next-session` text are public. Nothing private belongs in
-  a bead here — not a path with a name in it, not a device detail, not a
-  token. Gitignored and never tracked: `.beads/dolt/`, `.beads/backup/`,
+  (MIT). Everything committed is world-readable, including the tracked
+  beads config (`.beads/config.yaml`, `.beads/hooks/*`). **The beads
+  database itself is NOT public since 2026-08-15**: `sync.remote` points at
+  the private repo `mhosinski/perler-studio-beads` (bd stores the Dolt DB
+  as a blobstore under `refs/dolt/data` there); this repo's
+  `refs/dolt/data` / `__dolt_remote_info__` were deleted the same day and
+  `.beads/interactions.jsonl` (the audit trail) was untracked + gitignored.
+  A snapshot of the tracker had been public before that (design history,
+  nothing personal; GitHub may retain the objects until GC). Nothing private
+  belongs in a bead even so — not a path with a name in it, not a device
+  detail, not a token. A fresh clone needs SSH access to
+  `perler-studio-beads` for `bd dolt pull/push`. Gitignored and never
+  tracked: `.beads/dolt/`, `.beads/backup/`, `.beads/interactions.jsonl`,
   `.beads-credential-key`, `.env*`, key material (`gitignore-baseline`).
 - **The live site.** `https://mhosinski.github.io/perler-studio/`, static
   files served by GitHub Pages from `main`. It holds only the app and the
@@ -152,17 +158,17 @@ below.
    re-key; nothing else holds deploy authority.
 3. A secret or private detail lands in a commit or a bead → it is public
    the moment it is pushed; rotate it *at its source* and rewrite only if
-   the value is still live — the repo history and `refs/dolt/data` are not
-   reliably scrubbable. Who to tell: nobody's data but ours is here.
+   the value is still live — the repo history (and, before 2026-08-15,
+   `refs/dolt/data`) is not reliably scrubbable. Who to tell: nobody's data but ours is here.
 
 Where to look: `gh run list --workflow pages.yml`, `git log`,
-`.beads/interactions.jsonl` (the tracker's audit trail).
+`.beads/interactions.jsonl` (the tracker's audit trail, local/untracked).
 
 **Findings log:**
 
 | Date | Finding | Disposition |
 | ---- | ------- | ----------- |
-| 2026-08-15 | Repo is public and beads sync publishes the whole tracker (issues, notes, memories, handoff) to `refs/dolt/data`; `.beads/interactions.jsonl` is tracked | Accepted — nothing private has business here; recorded so `rule-secrets-out-of-band` is read as covering beads too |
+| 2026-08-15 | Repo is public and beads sync publishes the whole tracker (issues, notes, memories, handoff) to `refs/dolt/data`; `.beads/interactions.jsonl` is tracked | **Fixed same day**: `sync.remote` repointed to private `mhosinski/perler-studio-beads`, tracker pushed there, public refs deleted, `interactions.jsonl` untracked + gitignored; content reviewed as design history only, no rotation needed. Rule stays: nothing private in beads |
 | 2026-08-15 | Share links and pasted JSON are outside input into a client-side app; traced every `innerHTML` sink | No issue — colors are catalog-validated before they reach a sink, names go through `textContent`; documented as the control |
 | 2026-08-15 | GitHub Actions pinned by major tag, not SHA; no branch protection | Accepted — workflow holds no secrets and only `contents: read`; worst case is a bad build of a public static site, reverted by a push |
 | 2026-08-15 | No secrets to rotate; no network calls; gitleaks pre-commit installed | — |

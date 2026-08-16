@@ -21,3 +21,4 @@
 .envrc
 .direnv/
 beads-snapshot*.jsonl
+.beads/interactions.jsonl
